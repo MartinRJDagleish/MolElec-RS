@@ -9,3 +9,4 @@ edition = "2021"
 ndarray = { version = "0.15.6", features = ["blas"] }
 blas-src = { version = "0.9", features = ["openblas"] }
 openblas-src = { version = "0.10.8", features = ["cblas", "system"] }
+physical_constants = {version = "0.5.0"}
