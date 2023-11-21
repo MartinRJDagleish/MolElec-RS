@@ -15,7 +15,8 @@ const ATOMIC_MASSES_IN_AMU: [f64; 117] = [
 ];
 
 #[rustfmt::skip]
-#[derive(Debug, Eq, Hash, PartialEq, Clone, Copy, Default)]
+// #[derive(Debug, Eq, Hash, PartialEq, Clone, Copy, Default)]
+#[derive(Debug, Default)]
 enum AtomType {
     #[default]
     DUMMY, H, He, Li, Be, B, C, N, O, F, Ne, 

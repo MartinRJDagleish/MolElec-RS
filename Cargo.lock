@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "blas-src",
  "ndarray",
+ "ndarray_einsum_beta",
  "openblas-src",
  "physical_constants",
 ]
@@ -32,6 +33,15 @@ name = "anyhow"
 version = "1.0.75"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4668cab20f66d8d020e1fbc0ebe47217433c1b6c8f2040faf858554e394ace6"
+
+[[package]]
+name = "approx"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f2a05fd1bd10b2527e20a2cd32d8873d115b8b39fe219ee25f42a8aca6ba278"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "autocfg"
@@ -302,6 +312,7 @@ version = "0.15.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adb12d4e967ec485a5f71c6311fe28158e9d6f4bc4a447b474184d0f91a8fa32"
 dependencies = [
+ "approx",
  "cblas-sys",
  "libc",
  "matrixmultiply",
@@ -309,6 +320,18 @@ dependencies = [
  "num-integer",
  "num-traits",
  "rawpointer",
+]
+
+[[package]]
+name = "ndarray_einsum_beta"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "668b3abeae3e0637740340e0e32a9bf9308380e146ea6797950f9ff16e88d88a"
+dependencies = [
+ "lazy_static",
+ "ndarray",
+ "num-traits",
+ "regex",
 ]
 
 [[package]]

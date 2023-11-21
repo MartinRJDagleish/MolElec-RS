@@ -44,14 +44,12 @@ impl Geometry {
 
 #[allow(non_snake_case)]
 impl Molecule {
-    pub fn new(geom_filepath: &str) -> Self {
-        let tot_charge = 0;
+    pub fn new(geom_filepath: &str, charge: i32) -> Self {
+        let tot_charge = charge;
         let atoms = Vec::new();
         let (z_vals, geom_matr, no_atoms) = Self::read_xyz_xmol_inputfile(geom_filepath).unwrap();
         let geom = Geometry::new(geom_matr);
-
-        //FIXME
-        let no_elec = 0;
+        let no_elec = z_vals.iter().sum::<u32>() + tot_charge as u32;
 
         Self {
             tot_charge,
@@ -125,4 +123,18 @@ impl Molecule {
     // fn atom(self, idx: usize) -> &Atom {
     //     &self.atoms[idx]
     // }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_mol_create() {
+        let water_90_fpath = "data/xyz/water90.xyz";
+        let test_mol = Molecule::new(water_90_fpath, 0);
+        // assert_eq!(test_mol)
+        // print_hello(input);
+    }
 }
