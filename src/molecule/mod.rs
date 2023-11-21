@@ -1,14 +1,14 @@
+use atom::Atom;
+use ndarray::prelude::*;
 use std::{
     fs::File,
     io::{BufRead, BufReader},
 };
-
-use atom::Atom;
-use ndarray::prelude::*;
+use strum_macros::EnumString;
 
 mod atom;
 
-const PSE_ELEM_SYMBS: [&str; 119] = [
+pub(crate) const PSE_ELEM_SYMS_STR: [&str; 119] = [
     "Du", "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S",
     "Cl", "Ar", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge",
     "As", "Se", "Br", "Kr", "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd",
@@ -19,7 +19,25 @@ const PSE_ELEM_SYMBS: [&str; 119] = [
     "Nh", "Fl", "Mc", "Lv", "Ts", "Og",
 ];
 
-#[derive(Debug,Default)]
+#[rustfmt::skip]
+#[derive(Debug, Default, Hash, Eq, PartialEq, Clone, Copy, EnumString)]
+pub(crate) enum PseElemSym {
+    #[default]
+    Du, // Dummy atom
+    H,                                                                 He, 
+    Li, Be,                                         B,  C, N,  O,   F, Ne, 
+    Na, Mg,                                        Al, Si, P,  S,  Cl, Ar, 
+    K,  Ca, Sc, Ti, V, Cr, Mn, Fe, Co, Ni, Cu, Zn, Ga, Ge, As, Se, Br, Kr, 
+    Rb, Sr, Y, Zr, Nb, Mo, Tc, Ru, Rh, Pd, Ag, Cd, In, Sn, Sb, Te,  I, Xe, 
+    Cs, Ba, 
+        La, Ce, Pr, Nd, Pm, Sm, Eu, Gd, Tb, Dy, Ho, Er, Tm, Yb, Lu,
+            Hf, Ta, W, Re, Os, Ir, Pt, Au, Hg,     Tl, Pb, Bi, Po, At, Rn, 
+    Fr, Ra, 
+        Ac, Th, Pa, U, Np, Pu, Am, Cm, Bk, Cf, Es, Fm, Md, No, Lr, 
+               Rf, Db, Sg, Bh, Hs, Mt, Ds, Rg, Cn, Nh, Fl, Mc, Lv, Ts, Og,
+}
+
+#[derive(Debug, Default)]
 pub struct Molecule {
     tot_charge: i32,
     atoms: Vec<Atom>,
@@ -75,7 +93,7 @@ impl Molecule {
 
         // let mut first_line = String::new();
         // reader.read_line(&mut first_line);
-        
+
         let no_atoms: usize = lines.next().unwrap().trim().parse()?;
 
         // let mut z_vals: Vec<u32> = Vec::new();
@@ -98,7 +116,7 @@ impl Molecule {
         //* Create z_vals from atom symbols above */
         let mut z_vals = Vec::new();
         for atom in at_symbs {
-            let z_val = PSE_ELEM_SYMBS
+            let z_val = PSE_ELEM_SYMS_STR
                 .iter()
                 .position(|&sy| sy == atom)
                 .unwrap_or(0);
@@ -116,25 +134,34 @@ impl Molecule {
     fn no_atoms(self) -> usize {
         self.atoms.len()
     }
-    
+
     // #[inline]
-    // fn 
+    // fn
 
     // fn atom(self, idx: usize) -> &Atom {
     //     &self.atoms[idx]
     // }
 }
 
-
 #[cfg(test)]
 mod tests {
+
+    use std::str::FromStr;
+
     use super::*;
-    
+
     #[test]
     fn test_mol_create() {
         let water_90_fpath = "data/xyz/water90.xyz";
         let test_mol = Molecule::new(water_90_fpath, 0);
         // assert_eq!(test_mol)
         // print_hello(input);
+    }
+
+    #[test]
+    fn test_enum_string() {
+        let test_str = "H";
+        let test_enum = PseElemSym::from_str(test_str);
+        println!("test_enum: {:?}", test_enum.unwrap());
     }
 }

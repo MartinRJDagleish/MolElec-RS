@@ -1,8 +1,8 @@
-use crate::molecule::PSE_ELEM_SYMBS;
+use crate::molecule::PseElemSym;
+use crate::molecule::PSE_ELEM_SYMS_STR;
 
 #[rustfmt::skip]
 const ATOMIC_MASSES_IN_AMU: [f64; 117] = [
-
     1.00782503223, 4.00260325413, 7.0160034366, 9.012183065, 11.00930536, 12.0000000, 14.00307400443, 15.99491461957, 18.99840316273, 19.9924401762, 22.9897692820,
     23.985041697, 26.98153853, 27.97692653465, 30.97376199842, 31.9720711744, 34.968852682, 39.9623831237, 38.9637064864, 39.962590863, 44.95590828, 47.94794198, 50.94395704,
     51.94050623, 54.93804391, 55.93493633, 58.93319429, 57.93534241, 62.92959772, 63.92914201, 68.9255735, 73.921177761, 74.92159457, 79.9165218, 78.9183376, 83.9114977282, 84.9117897379,
@@ -13,23 +13,6 @@ const ATOMIC_MASSES_IN_AMU: [f64; 117] = [
     227.0277523, 232.0380558, 231.0358842, 238.0507884, 237.0481736, 244.0642053, 243.0613813, 247.0703541, 247.0703073, 251.0795886, 252.082980, 257.0951061, 258.0984315,
     259.10103, 266.11983, 267.12179, 268.12567, 271.13393, 270.13336, 269.13375, 278.15631, 281.16451, 282.16912, 285.17712, 286.18221, 289.19042, 289.19363, 293.20449, 294.21046,
 ];
-
-#[rustfmt::skip]
-// #[derive(Debug, Eq, Hash, PartialEq, Clone, Copy, Default)]
-#[derive(Debug, Default)]
-enum AtomType {
-    #[default]
-    DUMMY, H, He, Li, Be, B, C, N, O, F, Ne, 
-    Na, Mg, Al, Si, P, S, Cl, Ar, 
-    K, Ca, Sc, Ti, V, Cr, Mn, Fe, Co, Ni, Cu, Zn, Ga, Ge, As, Se, Br, Kr, 
-    Rb, Sr, Y, Zr, Nb, Mo, Tc, Ru, Rh, Pd, Ag, Cd, In, Sn, Sb, Te, I, Xe, 
-    Cs, Ba, 
-        La, Ce, Pr, Nd, Pm, Sm, Eu, Gd, Tb, Dy, Ho, Er, Tm, Yb, Lu,
-               Hf, Ta, W, Re, Os, Ir, Pt, Au, Hg, Tl, Pb, Bi, Po, At, Rn, 
-    Fr, Ra, 
-        Ac, Th, Pa, U, Np, Pu, Am, Cm, Bk, Cf, Es, Fm, Md, No, Lr, 
-               Rf, Db, Sg, Bh, Hs, Mt, Ds, Rg, Cn, Nh, Fl, Mc, Lv, Ts, Og,
-}
 
 #[derive(Debug, Default)]
 pub struct Atom {
@@ -49,11 +32,11 @@ impl Atom {
         }
     }
 
-    fn to_str_sym(&self) -> String {
-        PSE_ELEM_SYMBS[self.z_val as usize].to_string()
+    fn to_sym_str(&self) -> String {
+        PSE_ELEM_SYMS_STR[self.z_val as usize].to_string()
     }
 
-    pub fn z_val_to_sym(z_val: usize) -> String {
-        PSE_ELEM_SYMBS[z_val].to_string()
+    pub fn z_val_to_sym_str(z_val: usize) -> String {
+        PSE_ELEM_SYMS_STR[z_val].to_string()
     }
 }
