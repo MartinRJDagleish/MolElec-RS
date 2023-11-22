@@ -13,4 +13,3 @@ ndarray_einsum_beta = {version = "0.7.0"}
 physical_constants = {version = "0.5.0"}
 strum = "0.25.0"
 strum_macros = "0.25.3"
-nom = "7.1.3"

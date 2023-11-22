@@ -64,10 +64,15 @@ impl Geometry {
 impl Molecule {
     pub fn new(geom_filepath: &str, charge: i32) -> Self {
         let tot_charge = charge;
-        let atoms = Vec::new();
         let (z_vals, geom_matr, no_atoms) = Self::read_xyz_xmol_inputfile(geom_filepath).unwrap();
-        let geom = Geometry::new(geom_matr);
         let no_elec = z_vals.iter().sum::<u32>() + tot_charge as u32;
+
+        //* Create atoms from input
+        let mut atoms: Vec<Atom> = Vec::with_capacity(no_atoms);
+        Self::create_atoms_from_input(&mut atoms, &z_vals, &geom_matr);
+
+        let geom = Geometry::new(geom_matr);
+        
 
         Self {
             tot_charge,
@@ -76,6 +81,18 @@ impl Molecule {
             z_vals,
             no_elec,
             no_atoms,
+        }
+    }
+    
+    fn create_atoms_from_input(atoms: &mut Vec<Atom>, z_vals: &Vec<u32>, geom_matr: &Array2<f64>) {
+        for (at_idx, z_val) in z_vals.iter().enumerate() {
+            let atom = Atom::new(
+                geom_matr[(at_idx, 0)],
+                geom_matr[(at_idx, 1)],
+                geom_matr[(at_idx, 2)],
+                *z_val,
+            );
+            atoms.push(atom);
         }
     }
 
@@ -153,15 +170,23 @@ mod tests {
     #[test]
     fn test_mol_create() {
         let water_90_fpath = "data/xyz/water90.xyz";
+        let _test_mol = Molecule::new(water_90_fpath, 0);
+    }
+
+
+    #[test]
+    fn test_no_atoms() {
+        let water_90_fpath = "data/xyz/water90.xyz";
         let test_mol = Molecule::new(water_90_fpath, 0);
-        // assert_eq!(test_mol)
-        // print_hello(input);
+        let no_atoms = test_mol.no_atoms();
+        assert_eq!(no_atoms, 3); // test case for water
     }
 
     #[test]
     fn test_enum_string() {
         let test_str = "H";
         let test_enum = PseElemSym::from_str(test_str);
-        println!("test_enum: {:?}", test_enum.unwrap());
+        assert_eq!(test_enum.unwrap(), PseElemSym::H);
+        // println!("test_enum: {:?}", test_enum.unwrap());
     }
 }

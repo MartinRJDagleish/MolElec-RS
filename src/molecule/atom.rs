@@ -1,3 +1,5 @@
+use std::ops::{Index, IndexMut};
+
 use crate::molecule::PseElemSym;
 use crate::molecule::PSE_ELEM_SYMS_STR;
 
@@ -22,6 +24,30 @@ pub struct Atom {
     z_val: u32,
 }
 
+
+impl Index<usize> for Atom {
+    type Output = f64; // necessary for Index trait
+    fn index<'a>(&'a self, i: usize) -> &'a f64 {
+        match i {
+            0 => &self.x,
+            1 => &self.y,
+            2 => &self.z,
+            _ => panic!("Index out of bounds for Atom"),
+        }
+    }
+}
+
+impl IndexMut<usize> for Atom {
+    fn index_mut<'a>(&'a mut self, i: usize) -> &'a mut f64 {
+        match i {
+            0 => &mut self.x,
+            1 => &mut self.y,
+            2 => &mut self.z,
+            _ => panic!("Index out of bounds for Atom"),
+        }
+    }
+}
+
 impl Atom {
     pub fn new(x_inp: f64, y_inp: f64, z_inp: f64, z_val: u32) -> Self {
         Self {
@@ -40,3 +66,9 @@ impl Atom {
         PSE_ELEM_SYMS_STR[z_val].to_string()
     }
 }
+
+// impl IndexMut<usize> for Atom {
+//     fn index_mut<'a>(&'a mut self, i: usize) -> &'a mut f32 {
+//         &mut self.e[i]
+//     }
+// }
