@@ -172,6 +172,7 @@ lazy_static! {
 #[derive(Debug, Default)]
 pub struct Molecule {
     tot_charge: i32,
+    tot_mass: f64,
     atoms: Vec<Atom>,
     geom: Geometry,
     z_vals: Vec<u32>,
@@ -204,9 +205,14 @@ impl Molecule {
         Self::create_atoms_from_input(&mut atoms, &z_vals, &geom_matr);
 
         let geom = Geometry::new(geom_matr);
+        
+
+        //* Create total mass
+        let tot_mass = atoms.iter().map(|at| at.mass).sum::<f64>();
 
         Self {
             tot_charge,
+            tot_mass,
             atoms,
             geom,
             z_vals,
@@ -339,6 +345,16 @@ impl Molecule {
         }
         core_potential_der
     }
+    
+    fn calc_centre_of_mass(self) {
+        let mut COM = Array1::<f64>::zeros(3);
+        for atom in self.atoms.iter() {
+            COM[0] += atom.mass * atom[0]; // x
+            COM[1] += atom.mass * atom[1]; // y
+            COM[2] += atom.mass * atom[2]; // z
+        }
+        COM /= self.tot_mass;
+    }
 }
 
 #[cfg(test)]
@@ -351,6 +367,7 @@ mod tests {
     fn test_mol_create() {
         let water_90_fpath = "data/xyz/water90.xyz";
         let _test_mol = Molecule::new(water_90_fpath, 0);
+        println!("test_mol: {:?}", _test_mol);
     }
 
     #[test]
@@ -375,7 +392,6 @@ mod tests {
         let test_str = "H";
         let test_enum = PseElemSym::from_str(test_str);
         assert_eq!(test_enum.unwrap(), PseElemSym::H);
-        // println!("test_enum: {:?}", test_enum.unwrap());
     }
     
     #[test]
