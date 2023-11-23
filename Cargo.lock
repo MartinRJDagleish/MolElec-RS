@@ -7,6 +7,7 @@ name = "MolElecRS"
 version = "0.1.0"
 dependencies = [
  "blas-src",
+ "lazy_static",
  "ndarray",
  "ndarray_einsum_beta",
  "openblas-src",

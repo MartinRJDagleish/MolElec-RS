@@ -1,10 +1,13 @@
+#[macro_use]
+extern crate lazy_static;
+
 mod basisset;
 mod molecule;
+mod print_utils;
 
-// use ndarray::prelude::*;
 use molecule::Molecule;
 
 fn main() {
-    let my_mol = Molecule::new("data/xyz/water90.xyz", 0);
-    println!("Molecule: {:?}", my_mol);
+    let mol = Molecule::new("data/xyz/water90.xyz", 0);
+    println!("Molecule: {:?}", mol);
 }

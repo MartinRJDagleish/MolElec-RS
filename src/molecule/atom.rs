@@ -1,7 +1,6 @@
-use std::ops::{Index, IndexMut};
-
 use crate::molecule::PseElemSym;
 use crate::molecule::PSE_ELEM_SYMS_STR;
+use std::ops::{Index, IndexMut};
 
 #[rustfmt::skip]
 const ATOMIC_MASSES_IN_AMU: [f64; 117] = [
@@ -23,7 +22,6 @@ pub struct Atom {
     z: f64,
     z_val: u32,
 }
-
 
 impl Index<usize> for Atom {
     type Output = f64; // necessary for Index trait
