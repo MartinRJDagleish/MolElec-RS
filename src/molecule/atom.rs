@@ -80,17 +80,8 @@ impl Atom {
         }
     }
 
-    fn to_sym_str(&self) -> String {
-        PSE_ELEM_SYMS_STR[self.z_val as usize].to_string()
-    }
-
     pub fn z_val_to_sym_str(z_val: usize) -> String {
         PSE_ELEM_SYMS_STR[z_val].to_string()
     }
 }
 
-// impl IndexMut<usize> for Atom {
-//     fn index_mut<'a>(&'a mut self, i: usize) -> &'a mut f32 {
-//         &mut self.e[i]
-//     }
-// }

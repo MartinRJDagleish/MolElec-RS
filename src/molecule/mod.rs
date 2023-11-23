@@ -206,7 +206,6 @@ impl Molecule {
 
         let geom = Geometry::new(geom_matr);
         
-
         //* Create total mass
         let tot_mass = atoms.iter().map(|at| at.mass).sum::<f64>();
 
@@ -287,21 +286,6 @@ impl Molecule {
     fn no_atoms(self) -> usize {
         self.atoms.len()
     }
-
-    // fn calc_core_potential(&self) -> f64 {
-    //     let mut core_potential = 0.0;
-    //     // self.geom.coords_matr.
-    //     for i in 0..self.no_atoms {
-    //         for j in  i+1..self.no_atoms {
-    //             // let r_ij = self.geom.coords_matr.
-    //             let r_ij_norm = r_ij.dot(&r_ij).sqrt();
-    //             let z_i = self.z_vals[i];
-    //             let z_j = self.z_vals[j];
-    //             core_potential += z_i as f64 * z_j as f64 / r_ij_norm;
-    //         }
-    //     }
-    //     core_potential
-    // }
 
     fn calc_core_potential(&self) -> f64 {
         let mut core_potential = 0.0;
