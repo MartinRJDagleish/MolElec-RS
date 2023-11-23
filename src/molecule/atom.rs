@@ -1,6 +1,5 @@
-use crate::molecule::PseElemSym;
 use crate::molecule::PSE_ELEM_SYMS_STR;
-use std::ops::{Index, IndexMut};
+use std::ops::{Index, IndexMut, Sub};
 
 #[rustfmt::skip]
 const ATOMIC_MASSES_IN_AMU: [f64; 117] = [
@@ -15,12 +14,12 @@ const ATOMIC_MASSES_IN_AMU: [f64; 117] = [
     259.10103, 266.11983, 267.12179, 268.12567, 271.13393, 270.13336, 269.13375, 278.15631, 281.16451, 282.16912, 285.17712, 286.18221, 289.19042, 289.19363, 293.20449, 294.21046,
 ];
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct Atom {
     x: f64,
     y: f64,
     z: f64,
-    z_val: u32,
+    pub z_val: u32,
 }
 
 impl Index<usize> for Atom {
@@ -45,6 +44,28 @@ impl IndexMut<usize> for Atom {
         }
     }
 }
+
+impl Sub for Atom {
+    type Output = f64;
+    fn sub(self, other: Self) -> Self::Output {
+        let dx = self.x - other.x;
+        let dy = self.y - other.y;
+        let dz = self.z - other.z;
+        (dx * dx + dy * dy + dz * dz).sqrt()
+    }
+}
+
+impl<'a> Sub for &'a Atom {
+    type Output = f64;
+
+    fn sub(self, other: Self) -> Self::Output {
+        let dx = self.x - other.x;
+        let dy = self.y - other.y;
+        let dz = self.z - other.z;
+        (dx * dx + dy * dy + dz * dz).sqrt()
+    }
+}
+
 
 impl Atom {
     pub fn new(x_inp: f64, y_inp: f64, z_inp: f64, z_val: u32) -> Self {

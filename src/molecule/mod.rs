@@ -10,6 +10,12 @@ use std::{
 };
 use strum_macros::EnumString;
 
+pub(crate) enum Cartesian {
+    X = 0,
+    Y = 1,
+    Z = 2,
+}
+
 pub(crate) const PSE_ELEM_SYMS_STR: [&str; 119] = [
     "Du", "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S",
     "Cl", "Ar", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge",
@@ -275,10 +281,70 @@ impl Molecule {
     fn no_atoms(self) -> usize {
         self.atoms.len()
     }
+
+    // fn calc_core_potential(&self) -> f64 {
+    //     let mut core_potential = 0.0;
+    //     // self.geom.coords_matr.
+    //     for i in 0..self.no_atoms {
+    //         for j in  i+1..self.no_atoms {
+    //             // let r_ij = self.geom.coords_matr.
+    //             let r_ij_norm = r_ij.dot(&r_ij).sqrt();
+    //             let z_i = self.z_vals[i];
+    //             let z_j = self.z_vals[j];
+    //             core_potential += z_i as f64 * z_j as f64 / r_ij_norm;
+    //         }
+    //     }
+    //     core_potential
+    // }
+
+    fn calc_core_potential(&self) -> f64 {
+        let mut core_potential = 0.0;
+        let coords = &self.geom.coords_matr;
+
+        for i in 0..self.no_atoms {
+            let r_i = coords.slice(s![i, ..]);
+            for j in i + 1..self.no_atoms {
+                let r_j = coords.slice(s![j, ..]);
+
+                let r_ij = &r_i - &r_j;
+                let r_ij_norm = r_ij.dot(&r_ij).sqrt();
+
+                core_potential += (self.z_vals[i] as f64) * (self.z_vals[j] as f64) / r_ij_norm;
+            }
+        }
+        core_potential
+    }
+    
+    fn calc_core_potential_der(&self, deriv_atom: &Atom, cc: Cartesian) -> f64 {
+        let mut core_potential_der = 0.0;
+
+        for other_atom in self.atoms.iter() {
+            if other_atom == deriv_atom {
+                continue;
+            }
+            let r_ij_norm = deriv_atom - other_atom;
+            let z_i = deriv_atom.z_val;
+            let z_j = other_atom.z_val;
+            match cc {
+                Cartesian::X => {
+                    core_potential_der += z_i as f64 * z_j as f64 * (deriv_atom[0] - other_atom[0]) / r_ij_norm.powi(3);
+                }
+                Cartesian::Y => {
+                    core_potential_der += z_i as f64 * z_j as f64 * (deriv_atom[1] - other_atom[1]) / r_ij_norm.powi(3);
+                }
+                Cartesian::Z => {
+                    core_potential_der += z_i as f64 * z_j as f64 * (deriv_atom[2] - other_atom[2]) / r_ij_norm.powi(3);
+                }
+            }
+        }
+        core_potential_der
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use approx::relative_eq;
+
     use super::*;
 
     #[test]
@@ -310,5 +376,14 @@ mod tests {
         let test_enum = PseElemSym::from_str(test_str);
         assert_eq!(test_enum.unwrap(), PseElemSym::H);
         // println!("test_enum: {:?}", test_enum.unwrap());
+    }
+    
+    #[test]
+    fn test_calc_core_potential() {
+        let water_90_fpath = "data/xyz/water90.xyz";
+        let test_mol = Molecule::new(water_90_fpath, 0);
+        let core_potential = test_mol.calc_core_potential();
+        println!("core_potential: {}", core_potential);
+        relative_eq!(core_potential, 9.209396009090517, epsilon = 1.0e-10); // test case for water
     }
 }
