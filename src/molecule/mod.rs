@@ -379,17 +379,23 @@ impl Molecule {
             .invh()
             .unwrap();
 
-        let new_geom_matr = Array2::<f64>::zeros((self.no_atoms, 3));
-        // let slice_test = new_geom_matr.slice_axis_mut(Axis(0), s![.., ..3]);
-        // println!("transform_matr: {:?}", transform_matr);
-        // println!("self.geom.coords_matr (before): {:?}", self.geom.coords_matr);
-        // self.geom.coords_matr = transform_matr.dot(&self.geom.coords_matr);
-        // for atom in self.atoms.iter_mut() {
-        //     atom[0] = self.geom.coords_matr[(0, 0)];
-        //     atom[1] = self.geom.coords_matr[(0, 1)];
-        //     atom[1] = self.geom.coords_matr[(0, 2)];
-        // }
-        // println!("self.geom.coords_matr (after): {:?}", self.geom.coords_matr);
+        // Debug print
+        // println!("transform_matr:\n {}", transform_matr);
+        // println!("self.geom.coords_matr (before):\n {}", self.geom.coords_matr);
+        
+        for mut row in self.geom.coords_matr.axis_iter_mut(Axis(0)) {
+            let temp = transform_matr.dot(&row);
+            row.assign(&temp);
+        }
+        // println!("self.geom.coords_matr (after):\n {}", self.geom.coords_matr);
+
+        
+        //* Update atom coords
+        for (at_idx, atom) in self.atoms.iter_mut().enumerate() {
+            atom[0] = self.geom.coords_matr[(at_idx, 0)];
+            atom[1] = self.geom.coords_matr[(at_idx, 1)];
+            atom[2] = self.geom.coords_matr[(at_idx, 2)];
+        }
     }
 }
 
@@ -398,18 +404,17 @@ mod tests {
     use approx::relative_eq;
 
     use super::*;
+    const WATER_90_FPATH: &str = "data/xyz/water90.xyz";
 
     #[test]
     fn test_mol_create() {
-        let water_90_fpath = "data/xyz/water90.xyz";
-        let _test_mol = Molecule::new(water_90_fpath, 0);
+        let _test_mol = Molecule::new(WATER_90_FPATH, 0);
         println!("test_mol: {:?}", _test_mol);
     }
 
     #[test]
     fn test_no_atoms() {
-        let water_90_fpath = "data/xyz/water90.xyz";
-        let test_mol = Molecule::new(water_90_fpath, 0);
+        let test_mol = Molecule::new(WATER_90_FPATH, 0);
         let no_atoms = test_mol.no_atoms();
         assert_eq!(no_atoms, 3); // test case for water
     }
@@ -425,31 +430,33 @@ mod tests {
 
     #[test]
     fn test_enum_string() {
-        let test_str = "H";
+        const test_str: &str = "H";
         let test_enum = PseElemSym::from_str(test_str);
         assert_eq!(test_enum.unwrap(), PseElemSym::H);
     }
 
     #[test]
     fn test_calc_core_potential() {
-        let water_90_fpath = "data/xyz/water90.xyz";
-        let test_mol = Molecule::new(water_90_fpath, 0);
+        let test_mol = Molecule::new(WATER_90_FPATH, 0);
         let core_potential = test_mol.calc_core_potential();
         println!("core_potential: {}", core_potential);
-        relative_eq!(core_potential, 9.209396009090517, epsilon = 1.0e-10); // test case for water
+        assert!(relative_eq!(core_potential, 9.209396009090517, epsilon = 1.0e-10));// test case for water
     }
 
     #[test]
     fn test_calc_inertia_matr() {
-        let water_90_fpath = "data/xyz/water90.xyz";
-        let test_mol = Molecule::new(water_90_fpath, 0);
+        let test_mol = Molecule::new(WATER_90_FPATH, 0);
         let inertia_matr = test_mol.calc_inertia_matr();
     }
 
     #[test]
     fn test_mol_reorient() {
-        let acetone_fpath = "data/xyz/acetone.xyz";
-        let mut test_mol = Molecule::new(acetone_fpath, 0);
+        let mol_fpath = "data/xyz/acetone.xyz";
+        // let mol_fpath = "data/xyz/water90.xyz";
+        let mut test_mol = Molecule::new(mol_fpath, 0);
         test_mol.mol_reorient_to_princ_ax_of_inertia();
+        // test_mol.mol_reorient_to_princ_ax_of_inertia();
+        // let test_after_inertia_matr = test_mol.calc_inertia_matr();
+        // println!("test_after_inertia_matr:\n {}", test_after_inertia_matr);
     }
 }
