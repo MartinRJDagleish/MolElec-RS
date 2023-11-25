@@ -1,4 +1,5 @@
-use ndarray::Array1;
+use crate::molecule::cartesian_comp::{CC_X, CC_Y, CC_Z};
+use ndarray::{Array1, ArrayView1};
 
 #[derive(Debug, Default)]
 struct E_herm_coeff_3d {
@@ -11,6 +12,8 @@ struct E_herm_coeff_3d {
 
 #[derive(Debug, Default)]
 struct E_herm_coeff_1d {
+    // Coefficients for the Hermite expansion of Cartesian Gaussian functions (1d)
+    // See: Molecular Electronic-Structure Theory, Helgaker, Jorgensen, Olsen, 2000,
     alpha1: f64,
     alpha2: f64,
     alph_p: f64,
@@ -21,23 +24,29 @@ struct E_herm_coeff_1d {
 struct R_herm_aux_int {
     // Hermite auxiliary int for the Hermite expansion of Cartesian Gaussian functions
     // See: Molecular Electronic-Structure Theory, Helgaker, Jorgensen, Olsen, 2000,
-    boys_val: f64, 
-    vec_PC: Array1<f64>, //TODO: change this? 
+    boys_val: f64,
+    vec_PC: Array1<f64>, //TODO: change this?
     alph_p: f64,
 }
 
-
-
-
+impl From<(E_herm_coeff_1d, E_herm_coeff_1d, E_herm_coeff_1d)> for E_herm_coeff_3d {
+    fn from((E_ij, E_kl, E_mn): (E_herm_coeff_1d, E_herm_coeff_1d, E_herm_coeff_1d)) -> Self {
+        Self { E_ij, E_kl, E_mn }
+    }
+}
 
 impl E_herm_coeff_3d {
-    fn new(E_ij: E_herm_coeff_1d, E_kl: E_herm_coeff_1d, E_mn: E_herm_coeff_1d) -> Self {
-        Self {
-            E_ij, 
-            E_kl,
-            E_mn,
-        }
+    fn new(alpha1: f64, alpha2: f64, alph_p: f64, vec_AB: ArrayView1<f64>) -> Self {
+        let E_ij = E_herm_coeff_1d::new(alpha1, alpha2, alph_p, vec_AB[CC_X]);
+        let E_kl = E_herm_coeff_1d::new(alpha1, alpha2, alph_p, vec_AB[CC_Y]);
+        let E_mn = E_herm_coeff_1d::new(alpha1, alpha2, alph_p, vec_AB[CC_Z]);
+
+        Self { E_ij, E_kl, E_mn }
     }
+    
+    // fn calc_recurr_rel(&mut self) {
+    //
+    // }
 }
 
 impl E_herm_coeff_1d {
@@ -49,7 +58,7 @@ impl E_herm_coeff_1d {
             dist_AB_comp,
         }
     }
-    
+
     //TODO: make this use the structs (E_herm_coeff_1d and E_herm_coeff_3d) instead of the arguments
     #[inline]
     pub fn calc_recurr_rel(
@@ -78,10 +87,10 @@ impl E_herm_coeff_1d {
         // alpha2 : f64
         //   Exponent of the second Gaussian function.
         //
-    
+
         let p_recip = (alpha1 + alpha2).recip();
         let q = alpha1 * alpha2 * p_recip;
-        // Early return 
+        // Early return
         if no_nodes < 0 || no_nodes > (l1 + l2) {
             return 0.0;
         }
@@ -95,23 +104,30 @@ impl E_herm_coeff_1d {
                     - (q * gauss_dist / alpha1)
                         * Self::calc_recurr_rel(l1 - 1, l2, no_nodes, gauss_dist, alpha1, alpha2)
                     + (no_nodes + 1) as f64
-                        * Self::calc_recurr_rel(l1 - 1, l2, no_nodes + 1, gauss_dist, alpha1, alpha2)
-            }
-            (_,_,_) => {
-                //* decrement index l2
-                0.5 * p_recip
-                    * Self::calc_recurr_rel(l1, l2 - 1, no_nodes - 1, gauss_dist, alpha1, alpha2)
-                    + (q * gauss_dist / alpha2) 
                         * Self::calc_recurr_rel(
-                            l1,
-                            l2 - 1,
-                            no_nodes,
+                            l1 - 1,
+                            l2,
+                            no_nodes + 1,
                             gauss_dist,
                             alpha1,
                             alpha2,
                         )
+            }
+            (_, _, _) => {
+                //* decrement index l2
+                0.5 * p_recip
+                    * Self::calc_recurr_rel(l1, l2 - 1, no_nodes - 1, gauss_dist, alpha1, alpha2)
+                    + (q * gauss_dist / alpha2)
+                        * Self::calc_recurr_rel(l1, l2 - 1, no_nodes, gauss_dist, alpha1, alpha2)
                     + (no_nodes + 1) as f64
-                        * Self::calc_recurr_rel(l1, l2 - 1, no_nodes + 1, gauss_dist, alpha1, alpha2)
+                        * Self::calc_recurr_rel(
+                            l1,
+                            l2 - 1,
+                            no_nodes + 1,
+                            gauss_dist,
+                            alpha1,
+                            alpha2,
+                        )
             }
         }
     }
@@ -120,6 +136,6 @@ impl E_herm_coeff_1d {
 impl R_herm_aux_int {
     // Use Boys function to calculate the Hermite auxiliary integral
     // fn new() {
-    //     
+    //
     // }
 }
