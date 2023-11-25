@@ -25,12 +25,12 @@ enum AngMomChar {
 #[derive(Debug, Default)]
 pub struct BasisSetDefTotal {
     basis_set_name: String,
-    basis_set_defs: HashMap<PseElemSym, BasisSetDefAtom>,
+    basis_set_defs_hm: HashMap<PseElemSym, BasisSetDefAtom>,
 }
 
 #[derive(Debug, Default, Clone)]
 struct BasisSetDefAtom {
-    elem_sym: PseElemSym,
+    // elem_sym: PseElemSym, // no need to store elem_sym redundantly
     pgto_exps: Vec<f64>,
     pgto_coeffs: Vec<f64>,
     ang_mom_chars: Vec<AngMomChar>,
@@ -44,13 +44,8 @@ impl BasisSetDefTotal {
 
         Self {
             basis_set_name,
-            basis_set_defs,
+            basis_set_defs_hm: basis_set_defs,
         }
-    }
-
-    pub fn add_basis_set_def_atom(&mut self, basis_set_def_atom: BasisSetDefAtom) {
-        self.basis_set_defs
-            .insert(basis_set_def_atom.elem_sym, basis_set_def_atom);
     }
 
     pub fn parse_basis_set_file_psi4(
@@ -78,7 +73,9 @@ impl BasisSetDefTotal {
 
         let basis_set_file = File::open(basis_set_file_path)?;
         let reader = BufReader::new(basis_set_file);
+
         let mut basis_set_def_atom: BasisSetDefAtom = BasisSetDefAtom::default();
+        let mut elem_sym = PseElemSym::default();
 
         for line in reader.lines().skip(1) {
             let line = line?;
@@ -92,10 +89,7 @@ impl BasisSetDefTotal {
                 // Check if previous basis_set_def_atom is done
                 if !basis_set_def_atom.pgto_coeffs.is_empty() {
                     // Add the basis using the element symbol as key
-                    basis_set_defs.insert(
-                        basis_set_def_atom.elem_sym.clone(),
-                        basis_set_def_atom.clone(),
-                    );
+                    basis_set_defs.insert(elem_sym, basis_set_def_atom.clone());
                 } else {
                     // Create new basis_set_def_atom
                     basis_set_def_atom = BasisSetDefAtom::default();
@@ -105,7 +99,7 @@ impl BasisSetDefTotal {
                 let line_split: Vec<&str> = data_line.split_whitespace().collect();
                 if line_split.len() == 2 {
                     //* New version with enum
-                    basis_set_def_atom.elem_sym = match PseElemSym::from_str(line_split[0]) {
+                    elem_sym = match PseElemSym::from_str(line_split[0]) {
                         Ok(elem_sym) => elem_sym,
                         Err(e) => panic!("Error: {}", e),
                     };
@@ -146,6 +140,7 @@ mod tests {
     fn test_parser() {
         let basis_set_name = "cc-pVTZ".to_string();
         let basis_set_defs = BasisSetDefTotal::new(basis_set_name);
-        println!("{:?}", basis_set_defs);
+        println!("{:?}", basis_set_defs.basis_set_defs_hm.get(&PseElemSym::H));
+        // println!("{:?}", basis_set_defs);
     }
 }

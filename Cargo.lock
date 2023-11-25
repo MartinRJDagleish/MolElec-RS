@@ -3,11 +3,32 @@
 version = 3
 
 [[package]]
+name = "GSL"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9becaf6d7d1ba36a457288e661fa6a0472e8328629276f45369eafcd48ef1ce"
+dependencies = [
+ "GSL-sys",
+ "paste",
+]
+
+[[package]]
+name = "GSL-sys"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4577670dcc0720995dc39f04c438595eaae8ccc27f4aafd3e572dd408d01bd9d"
+dependencies = [
+ "libc",
+ "pkg-config",
+]
+
+[[package]]
 name = "MolElecRS"
 version = "0.1.0"
 dependencies = [
  "approx 0.5.1",
  "blas-src",
+ "boys",
  "lazy_static",
  "ndarray",
  "ndarray-linalg",
@@ -88,6 +109,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa443ee19b4cde6cdbd49043eb8964f9dd367b6d98d67f04395958ebfa28f39d"
 dependencies = [
  "openblas-src",
+]
+
+[[package]]
+name = "boys"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f03c2832bc2772cae5748420bcea7af018dc38c4eab96bebc896f6e061d3a5b9"
+dependencies = [
+ "GSL",
 ]
 
 [[package]]
@@ -521,6 +551,12 @@ dependencies = [
  "pkg-config",
  "vcpkg",
 ]
+
+[[package]]
+name = "paste"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de3145af08024dea9fa9914f381a17b8fc6034dfb00f3a84013f7ff43f29ed4c"
 
 [[package]]
 name = "percent-encoding"
