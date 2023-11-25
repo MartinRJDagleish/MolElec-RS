@@ -1,7 +1,9 @@
 mod atom;
 
 use atom::Atom;
-use ndarray::prelude::*;
+use ndarray::linalg::Dot;
+use ndarray::{s, Array1, Array2, Axis};
+use ndarray_linalg::{Eigh, InverseH, UPLO};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::{
@@ -205,7 +207,7 @@ impl Molecule {
         Self::create_atoms_from_input(&mut atoms, &z_vals, &geom_matr);
 
         let geom = Geometry::new(geom_matr);
-        
+
         //* Create total mass
         let tot_mass = atoms.iter().map(|at| at.mass).sum::<f64>();
 
@@ -283,7 +285,7 @@ impl Molecule {
     }
 
     #[inline(always)]
-    fn no_atoms(self) -> usize {
+    fn no_atoms(&self) -> usize {
         self.atoms.len()
     }
 
@@ -304,7 +306,7 @@ impl Molecule {
         }
         core_potential
     }
-    
+
     fn calc_core_potential_der(&self, deriv_atom: &Atom, cc: Cartesian) -> f64 {
         let mut core_potential_der = 0.0;
 
@@ -317,20 +319,23 @@ impl Molecule {
             let z_j = other_atom.z_val;
             match cc {
                 Cartesian::X => {
-                    core_potential_der += z_i as f64 * z_j as f64 * (deriv_atom[0] - other_atom[0]) / r_ij_norm.powi(3);
+                    core_potential_der += z_i as f64 * z_j as f64 * (deriv_atom[0] - other_atom[0])
+                        / r_ij_norm.powi(3);
                 }
                 Cartesian::Y => {
-                    core_potential_der += z_i as f64 * z_j as f64 * (deriv_atom[1] - other_atom[1]) / r_ij_norm.powi(3);
+                    core_potential_der += z_i as f64 * z_j as f64 * (deriv_atom[1] - other_atom[1])
+                        / r_ij_norm.powi(3);
                 }
                 Cartesian::Z => {
-                    core_potential_der += z_i as f64 * z_j as f64 * (deriv_atom[2] - other_atom[2]) / r_ij_norm.powi(3);
+                    core_potential_der += z_i as f64 * z_j as f64 * (deriv_atom[2] - other_atom[2])
+                        / r_ij_norm.powi(3);
                 }
             }
         }
         core_potential_der
     }
-    
-    fn calc_centre_of_mass(self) {
+
+    fn calc_centre_of_mass(&self) {
         let mut COM = Array1::<f64>::zeros(3);
         for atom in self.atoms.iter() {
             COM[0] += atom.mass * atom[0]; // x
@@ -338,6 +343,53 @@ impl Molecule {
             COM[2] += atom.mass * atom[2]; // z
         }
         COM /= self.tot_mass;
+    }
+
+    fn other_two_idx(inp: usize) -> (usize, usize) {
+        match inp {
+            0 => (1, 2),
+            1 => (0, 2),
+            2 => (0, 1),
+            _ => panic!("inp must be 0, 1, or 2"),
+        }
+    }
+
+    fn calc_inertia_matr(&self) -> Array2<f64> {
+        let mut inertia_matr = Array2::<f64>::zeros((3, 3));
+        for i in 0..3 {
+            let (k, l) = Self::other_two_idx(i);
+            for atom in self.atoms.iter() {
+                inertia_matr[(i, i)] += atom.mass * (atom[k].powi(2) + atom[l].powi(2));
+                for j in (i + 1)..3 {
+                    inertia_matr[(i, j)] -= atom.mass * atom[i] * atom[j];
+                    inertia_matr[(j, i)] = inertia_matr[(i, j)];
+                }
+            }
+        }
+        inertia_matr
+    }
+
+    /// Source: https://pythoninchemistry.org/ch40208/comp_chem_methods/moments_of_inertia.html
+    fn mol_reorient_to_princ_ax_of_inertia(&mut self) {
+        let mol_inertia_matr = self.calc_inertia_matr();
+        let transform_matr = mol_inertia_matr
+            .eigh(UPLO::Upper)
+            .unwrap()
+            .1
+            .invh()
+            .unwrap();
+
+        let new_geom_matr = Array2::<f64>::zeros((self.no_atoms, 3));
+        // let slice_test = new_geom_matr.slice_axis_mut(Axis(0), s![.., ..3]);
+        // println!("transform_matr: {:?}", transform_matr);
+        // println!("self.geom.coords_matr (before): {:?}", self.geom.coords_matr);
+        // self.geom.coords_matr = transform_matr.dot(&self.geom.coords_matr);
+        // for atom in self.atoms.iter_mut() {
+        //     atom[0] = self.geom.coords_matr[(0, 0)];
+        //     atom[1] = self.geom.coords_matr[(0, 1)];
+        //     atom[1] = self.geom.coords_matr[(0, 2)];
+        // }
+        // println!("self.geom.coords_matr (after): {:?}", self.geom.coords_matr);
     }
 }
 
@@ -377,7 +429,7 @@ mod tests {
         let test_enum = PseElemSym::from_str(test_str);
         assert_eq!(test_enum.unwrap(), PseElemSym::H);
     }
-    
+
     #[test]
     fn test_calc_core_potential() {
         let water_90_fpath = "data/xyz/water90.xyz";
@@ -385,5 +437,19 @@ mod tests {
         let core_potential = test_mol.calc_core_potential();
         println!("core_potential: {}", core_potential);
         relative_eq!(core_potential, 9.209396009090517, epsilon = 1.0e-10); // test case for water
+    }
+
+    #[test]
+    fn test_calc_inertia_matr() {
+        let water_90_fpath = "data/xyz/water90.xyz";
+        let test_mol = Molecule::new(water_90_fpath, 0);
+        let inertia_matr = test_mol.calc_inertia_matr();
+    }
+
+    #[test]
+    fn test_mol_reorient() {
+        let acetone_fpath = "data/xyz/acetone.xyz";
+        let mut test_mol = Molecule::new(acetone_fpath, 0);
+        test_mol.mol_reorient_to_princ_ax_of_inertia();
     }
 }

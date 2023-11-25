@@ -3,7 +3,6 @@ extern crate lazy_static;
 extern crate ndarray;
 extern crate openblas_src;
 
-
 mod basisset;
 mod molecule;
 mod print_utils;
