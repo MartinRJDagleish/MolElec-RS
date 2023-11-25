@@ -4,7 +4,7 @@ extern crate ndarray;
 extern crate openblas_src;
 
 mod basisset;
-mod mol_int;
+mod mol_int_and_deriv;
 mod molecule;
 mod print_utils;
 

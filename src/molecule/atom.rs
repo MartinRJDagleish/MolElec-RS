@@ -25,7 +25,7 @@ pub struct Atom {
 
 impl Index<usize> for Atom {
     type Output = f64; // necessary for Index trait
-    fn index<'a>(&'a self, i: usize) -> &'a f64 {
+    fn index(&self, i: usize) -> &f64 {
         match i {
             0 => &self.x,
             1 => &self.y,
@@ -36,7 +36,7 @@ impl Index<usize> for Atom {
 }
 
 impl IndexMut<usize> for Atom {
-    fn index_mut<'a>(&'a mut self, i: usize) -> &'a mut f64 {
+    fn index_mut(&mut self, i: usize) -> &mut f64 {
         match i {
             0 => &mut self.x,
             1 => &mut self.y,
@@ -67,7 +67,6 @@ impl<'a> Sub for &'a Atom {
     }
 }
 
-
 impl Atom {
     pub fn new(x_inp: f64, y_inp: f64, z_inp: f64, z_val: u32) -> Self {
         let mass = ATOMIC_MASSES_IN_AMU[z_val as usize];
@@ -76,7 +75,7 @@ impl Atom {
             y: y_inp,
             z: z_inp,
             z_val,
-            mass
+            mass,
         }
     }
 
@@ -84,4 +83,3 @@ impl Atom {
         PSE_ELEM_SYMS_STR[z_val].to_string()
     }
 }
-
