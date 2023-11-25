@@ -1,7 +1,8 @@
 mod atom;
+pub(crate) mod cartesian_comp;
 
 use atom::Atom;
-use ndarray::linalg::Dot;
+use cartesian_comp::{Cartesian, CC_X, CC_Y, CC_Z};
 use ndarray::{s, Array1, Array2, Axis};
 use ndarray_linalg::{Eigh, InverseH, UPLO};
 use std::collections::HashMap;
@@ -11,18 +12,6 @@ use std::{
     io::{BufRead, BufReader},
 };
 use strum_macros::EnumString;
-
-#[repr(usize)]
-#[derive(Clone, Copy)]
-pub(crate) enum Cartesian {
-    X = 0usize,
-    Y = 1usize,
-    Z = 2usize,
-}
-
-const CC_X: usize = Cartesian::X as usize;
-const CC_Y: usize = Cartesian::Y as usize;
-const CC_Z: usize = Cartesian::Z as usize;
 
 pub(crate) const PSE_ELEM_SYMS_STR: [&str; 119] = [
     "Du", "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S",
@@ -201,6 +190,7 @@ impl Geometry {
     }
 }
 
+type GeometryResult = Result<(Vec<u32>, Array2<f64>, usize), Box<dyn std::error::Error>>;
 #[allow(non_snake_case)]
 impl Molecule {
     pub fn new(geom_filepath: &str, charge: i32) -> Self {
@@ -212,23 +202,18 @@ impl Molecule {
         let mut atoms: Vec<Atom> = Vec::with_capacity(no_atoms);
         Self::create_atoms_from_input(&mut atoms, &z_vals, &geom_matr);
 
-        let geom = Geometry::new(geom_matr);
-
-        //* Create total mass
-        let tot_mass = atoms.iter().map(|at| at.mass).sum::<f64>();
-
         Self {
             tot_charge,
-            tot_mass,
+            tot_mass: atoms.iter().map(|at| at.mass).sum::<f64>(),
             atoms,
-            geom,
+            geom: Geometry::new(geom_matr),
             z_vals,
             no_elec,
             no_atoms,
         }
     }
 
-    fn create_atoms_from_input(atoms: &mut Vec<Atom>, z_vals: &Vec<u32>, geom_matr: &Array2<f64>) {
+    fn create_atoms_from_input(atoms: &mut Vec<Atom>, z_vals: &[u32], geom_matr: &Array2<f64>) {
         for (at_idx, z_val) in z_vals.iter().enumerate() {
             let atom = Atom::new(
                 geom_matr[(at_idx, CC_X)],
@@ -240,9 +225,7 @@ impl Molecule {
         }
     }
 
-    pub fn read_xyz_xmol_inputfile(
-        geom_filename: &str,
-    ) -> Result<(Vec<u32>, Array2<f64>, usize), Box<dyn std::error::Error>> {
+    fn read_xyz_xmol_inputfile(geom_filename: &str) -> GeometryResult {
         println!("Inputfile: {geom_filename}");
         println!("Reading geometry from input file...\n");
 
@@ -262,7 +245,7 @@ impl Molecule {
             let mut line_parts = line.split_whitespace(); // split whitespace does "trim" automatically
 
             at_symbs.push(line_parts.next().unwrap().to_string());
-            for cc in 0..3 {
+            for cc in [CC_X, CC_Y, CC_Z] {
                 geom_matr[(at_idx, cc)] = line_parts.next().unwrap().parse().unwrap();
             }
         }
@@ -346,11 +329,11 @@ impl Molecule {
 
     fn calc_inertia_matr(&self) -> Array2<f64> {
         let mut inertia_matr = Array2::<f64>::zeros((3, 3));
-        for i in 0..3 {
+        for i in [CC_X, CC_Y, CC_Z] {
             let (k, l) = Self::other_two_idx(i);
             for atom in self.atoms.iter() {
                 inertia_matr[(i, i)] += atom.mass * (atom[k].powi(2) + atom[l].powi(2));
-                for j in (i + 1)..3 {
+                for j in (i + 1)..=CC_Z {
                     inertia_matr[(i, j)] -= atom.mass * atom[i] * atom[j];
                     inertia_matr[(j, i)] = inertia_matr[(i, j)];
                 }
@@ -390,7 +373,15 @@ impl Molecule {
 
 #[cfg(test)]
 mod tests {
-    use approx::relative_eq;
+    // use approx::assert_abs_diff_eq;
+    // use approx::relative_eq;
+    // use ndarray::array;
+    use ndarray::prelude::*;
+    // use ndarray::approx
+    use approx::{
+        assert_abs_diff_eq, assert_abs_diff_ne, assert_relative_eq, assert_relative_ne,
+        assert_ulps_eq, assert_ulps_ne,
+    };
 
     use super::*;
     const WATER_90_FPATH: &str = "data/xyz/water90.xyz";
@@ -429,17 +420,19 @@ mod tests {
         let test_mol = Molecule::new(WATER_90_FPATH, 0);
         let core_potential = test_mol.calc_core_potential();
         println!("core_potential: {}", core_potential);
-        assert!(relative_eq!(
-            core_potential,
-            9.209396009090517,
-            epsilon = 1.0e-10
-        )); // test case for water
+        assert_relative_eq!(core_potential, 9.209396009090517, epsilon = 1.0e-10);
     }
 
     #[test]
     fn test_calc_inertia_matr() {
         let test_mol = Molecule::new(WATER_90_FPATH, 0);
-        let inertia_matr = test_mol.calc_inertia_matr();
+        let test_inertia_matr = test_mol.calc_inertia_matr();
+        let ref_inertia_matr: Array2<f64> = array![
+            [3.316846255214035, 0.0, 0.0],
+            [0.0, 3.316846255214035, 0.0],
+            [0.0, 0.0, 6.63369251042807]
+        ];
+        assert_abs_diff_eq!(test_inertia_matr, ref_inertia_matr);
     }
 
     #[test]
@@ -455,8 +448,8 @@ mod tests {
 
     #[test]
     fn test_cartesian_enum() {
-        let test_enum = Cartesian::X;
+        let test_enum = Cartesian::Y;
         let test_enum_val = test_enum as usize;
-        assert_eq!(test_enum_val, 0);
+        assert_eq!(test_enum_val, 1);
     }
 }
