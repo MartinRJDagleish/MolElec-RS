@@ -409,6 +409,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adb12d4e967ec485a5f71c6311fe28158e9d6f4bc4a447b474184d0f91a8fa32"
 dependencies = [
  "approx 0.4.0",
+ "approx 0.5.1",
  "cblas-sys",
  "libc",
  "matrixmultiply",
