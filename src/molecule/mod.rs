@@ -12,11 +12,17 @@ use std::{
 };
 use strum_macros::EnumString;
 
+#[repr(usize)]
+#[derive(Clone, Copy)]
 pub(crate) enum Cartesian {
-    X = 0,
-    Y = 1,
-    Z = 2,
+    X = 0usize,
+    Y = 1usize,
+    Z = 2usize,
 }
+
+const CC_X: usize = Cartesian::X as usize;
+const CC_Y: usize = Cartesian::Y as usize;
+const CC_Z: usize = Cartesian::Z as usize;
 
 pub(crate) const PSE_ELEM_SYMS_STR: [&str; 119] = [
     "Du", "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S",
@@ -225,9 +231,9 @@ impl Molecule {
     fn create_atoms_from_input(atoms: &mut Vec<Atom>, z_vals: &Vec<u32>, geom_matr: &Array2<f64>) {
         for (at_idx, z_val) in z_vals.iter().enumerate() {
             let atom = Atom::new(
-                geom_matr[(at_idx, 0)],
-                geom_matr[(at_idx, 1)],
-                geom_matr[(at_idx, 2)],
+                geom_matr[(at_idx, CC_X)],
+                geom_matr[(at_idx, CC_Y)],
+                geom_matr[(at_idx, CC_Z)],
                 *z_val,
             );
             atoms.push(atom);
@@ -264,13 +270,6 @@ impl Molecule {
         //* Create z_vals from atom symbols above */
         let mut z_vals: Vec<u32> = Vec::with_capacity(no_atoms);
         for atom in at_symbs {
-            // Version 1 (search through array O(N) algorithm)
-            // let z_val = PSE_ELEM_SYMS_STR
-            //     .iter()
-            //     .position(|&sy| sy == atom)
-            //     .unwrap_or(0);
-
-            // Version 2 (search through static HashMap O(1) algorithm)
             let pse_sym = PseElemSym::from_str(&atom)
                 .expect("PseElemSym does not exist; check your input again!");
             let z_val = PSE_ELEM_Z_VAL_HMAP.get(&pse_sym).unwrap_or(&0).to_owned();
@@ -309,42 +308,33 @@ impl Molecule {
 
     fn calc_core_potential_der(&self, deriv_atom: &Atom, cc: Cartesian) -> f64 {
         let mut core_potential_der = 0.0;
+        let cc_idx = cc as usize; // convert enum to usize
 
         for other_atom in self.atoms.iter() {
             if other_atom == deriv_atom {
                 continue;
             }
             let r_ij_norm = deriv_atom - other_atom;
-            let z_i = deriv_atom.z_val;
-            let z_j = other_atom.z_val;
-            match cc {
-                Cartesian::X => {
-                    core_potential_der += z_i as f64 * z_j as f64 * (deriv_atom[0] - other_atom[0])
-                        / r_ij_norm.powi(3);
-                }
-                Cartesian::Y => {
-                    core_potential_der += z_i as f64 * z_j as f64 * (deriv_atom[1] - other_atom[1])
-                        / r_ij_norm.powi(3);
-                }
-                Cartesian::Z => {
-                    core_potential_der += z_i as f64 * z_j as f64 * (deriv_atom[2] - other_atom[2])
-                        / r_ij_norm.powi(3);
-                }
-            }
+            let z_i = deriv_atom.z_val as f64;
+            let z_j = other_atom.z_val as f64;
+            core_potential_der +=
+                z_i * z_j * (deriv_atom[cc_idx] - other_atom[cc_idx]) / r_ij_norm.powi(3);
         }
         core_potential_der
     }
 
+    #[inline]
     fn calc_centre_of_mass(&self) {
         let mut COM = Array1::<f64>::zeros(3);
         for atom in self.atoms.iter() {
-            COM[0] += atom.mass * atom[0]; // x
-            COM[1] += atom.mass * atom[1]; // y
-            COM[2] += atom.mass * atom[2]; // z
+            COM[CC_X] += atom.mass * atom[CC_X]; // x
+            COM[CC_Y] += atom.mass * atom[CC_Y]; // y
+            COM[CC_Z] += atom.mass * atom[CC_Z]; // z
         }
         COM /= self.tot_mass;
     }
 
+    #[inline(always)]
     fn other_two_idx(inp: usize) -> (usize, usize) {
         match inp {
             0 => (1, 2),
@@ -382,19 +372,18 @@ impl Molecule {
         // Debug print
         // println!("transform_matr:\n {}", transform_matr);
         // println!("self.geom.coords_matr (before):\n {}", self.geom.coords_matr);
-        
+
         for mut row in self.geom.coords_matr.axis_iter_mut(Axis(0)) {
             let temp = transform_matr.dot(&row);
             row.assign(&temp);
         }
         // println!("self.geom.coords_matr (after):\n {}", self.geom.coords_matr);
 
-        
         //* Update atom coords
         for (at_idx, atom) in self.atoms.iter_mut().enumerate() {
-            atom[0] = self.geom.coords_matr[(at_idx, 0)];
-            atom[1] = self.geom.coords_matr[(at_idx, 1)];
-            atom[2] = self.geom.coords_matr[(at_idx, 2)];
+            atom[CC_X] = self.geom.coords_matr[(at_idx, CC_X)];
+            atom[CC_Y] = self.geom.coords_matr[(at_idx, CC_Y)];
+            atom[CC_Z] = self.geom.coords_matr[(at_idx, CC_Z)];
         }
     }
 }
@@ -440,7 +429,11 @@ mod tests {
         let test_mol = Molecule::new(WATER_90_FPATH, 0);
         let core_potential = test_mol.calc_core_potential();
         println!("core_potential: {}", core_potential);
-        assert!(relative_eq!(core_potential, 9.209396009090517, epsilon = 1.0e-10));// test case for water
+        assert!(relative_eq!(
+            core_potential,
+            9.209396009090517,
+            epsilon = 1.0e-10
+        )); // test case for water
     }
 
     #[test]
@@ -458,5 +451,12 @@ mod tests {
         // test_mol.mol_reorient_to_princ_ax_of_inertia();
         // let test_after_inertia_matr = test_mol.calc_inertia_matr();
         // println!("test_after_inertia_matr:\n {}", test_after_inertia_matr);
+    }
+
+    #[test]
+    fn test_cartesian_enum() {
+        let test_enum = Cartesian::X;
+        let test_enum_val = test_enum as usize;
+        assert_eq!(test_enum_val, 0);
     }
 }
