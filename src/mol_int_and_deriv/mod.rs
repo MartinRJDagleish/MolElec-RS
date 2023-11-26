@@ -1,5 +1,6 @@
 use crate::molecule::cartesian_comp::{CC_X, CC_Y, CC_Z};
 use ndarray::{Array1, ArrayView1};
+use physical_constants::ALPHA_PARTICLE_ELECTRON_MASS_RATIO;
 
 #[derive(Debug, Default)]
 struct E_herm_coeff_3d {
@@ -37,10 +38,25 @@ impl From<(E_herm_coeff_1d, E_herm_coeff_1d, E_herm_coeff_1d)> for E_herm_coeff_
 }
 
 impl E_herm_coeff_3d {
-    fn new(alpha1: f64, alpha2: f64, alph_p: f64, vec_AB: ArrayView1<f64>) -> Self {
-        let E_ij = E_herm_coeff_1d::new(alpha1, alpha2, alph_p, vec_AB[CC_X]);
-        let E_kl = E_herm_coeff_1d::new(alpha1, alpha2, alph_p, vec_AB[CC_Y]);
-        let E_mn = E_herm_coeff_1d::new(alpha1, alpha2, alph_p, vec_AB[CC_Z]);
+    /// ### Note: 
+    /// `vec_BA` is the vector from B to A, i.e. A - B (not B - A) => BA_x = A_x - B_x
+    /// 
+    /// ### Arguments
+    /// ----------
+    /// `alpha1` : Exponent of the first Gaussian function.
+    /// 
+    /// `alpha2` : Exponent of the second Gaussian function.
+    /// 
+    /// `vec_BA` : Vector from B to A, i.e. A - B (not B - A) => BA_x = A_x - B_x
+    /// 
+    /// ### Returns
+    /// ----------
+    /// `Self` : Struct containing the coefficients for the Hermite expansion of Cartesian Gaussian functions
+    fn new(alpha1: f64, alpha2: f64, vec_BA: ArrayView1<f64>) -> Self {
+        let one_over_alph_p = 1.0/ (alpha1 + alpha2);
+        let E_ij = E_herm_coeff_1d::new(alpha1, alpha2, one_over_alph_p, vec_BA[CC_X]);
+        let E_kl = E_herm_coeff_1d::new(alpha1, alpha2, one_over_alph_p, vec_BA[CC_Y]);
+        let E_mn = E_herm_coeff_1d::new(alpha1, alpha2, one_over_alph_p, vec_BA[CC_Z]);
 
         Self { E_ij, E_kl, E_mn }
     }
@@ -54,11 +70,11 @@ impl E_herm_coeff_3d {
 }
 
 impl E_herm_coeff_1d {
-    fn new(alpha1: f64, alpha2: f64, alph_p: f64, dist_AB_comp: f64) -> Self {
+    fn new(alpha1: f64, alpha2: f64, one_over_alph_p: f64, dist_AB_comp: f64) -> Self {
         Self {
             alpha1,
             alpha2,
-            one_over_alph_p: 1.0 / alph_p,
+            one_over_alph_p,
             dist_AB_comp,
         }
     }
@@ -87,7 +103,7 @@ impl E_herm_coeff_1d {
         let q = -2.0 * mu;
 
         match (no_nodes, l1, l2, deriv_deg) {
-            // Molecular integral cases
+            // Molecular integral cases; works and is correct
             (0, 0, 0, 0) => (-mu * self.dist_AB_comp * self.dist_AB_comp).exp(),
             (_, _, 0, 0) => {
                 //* decrement index l1
@@ -106,7 +122,9 @@ impl E_herm_coeff_1d {
                         * self.calc_recurr_rel(l1, l2 - 1, no_nodes + 1, deriv_deg)
             }
             // Derivate cases
-            _ => todo!() // [ ] implement the rest of the cases -> mainly derivative cases
+            (_,_,0,_) => todo!(), 
+            _ => todo!()
+            // [ ] implement the rest of the cases -> mainly derivative cases
         }
     }
 }
@@ -120,12 +138,14 @@ impl R_herm_aux_int {
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_abs_diff_eq;
+
     use super::*;
 
     #[test]
     fn test_E_calc_recurr_rel() {
         let test_vec_AB = Array1::from_vec(vec![1.0, 2.0, 3.0]);
-        let mut E_ab = E_herm_coeff_3d::new(0.5, 0.5, 1.0, ArrayView1::from(&test_vec_AB));
+        let mut E_ab = E_herm_coeff_3d::new(0.5, 0.5, ArrayView1::from(&test_vec_AB));
 
         let l1 = 2;
         let l2 = 1;
@@ -134,6 +154,6 @@ mod tests {
         
         let result = E_ab.calc_recurr_rel(l1, l2, no_nodes, deriv_deg);
         println!("result: {}", result);
-        // assert_eq!(result, 0.6065306597126334);
+        assert_abs_diff_eq!(result, -0.0049542582177241, epsilon = 1e-10);
     }
 }
