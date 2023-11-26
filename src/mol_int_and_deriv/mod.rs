@@ -84,7 +84,6 @@ impl E_herm_coeff_1d {
         }
     }
 
-    //[ ] make this use the structs (E_herm_coeff_1d and E_herm_coeff_3d) instead of the arguments
     /// Calculate the expansion coefficient for the overlap integral
     /// between two contracted Gaussian functions.
     ///
@@ -103,33 +102,6 @@ impl E_herm_coeff_1d {
         if no_nodes < 0 || no_nodes > (l1 + l2) || deriv_deg < 0 {
             return 0.0;
         }
-
-        //-------------- WORKING IMPL FOR MOL INTS -----------------
-        // match (no_nodes, l1, l2, deriv_deg) {
-        //     // Molecular integral cases; works and is correct
-        //     (0, 0, 0, 0) => (-mu * self.dist_AB_comp * self.dist_AB_comp).exp(),
-        //     (_, _, 0, 0) => {
-        //         //* decrement index l1
-        //         one_over_2p * self.calc_recurr_rel(l1 - 1, l2, no_nodes - 1, deriv_deg)
-        //             - (self.alpha2 * self.one_over_alph_p * self.dist_AB_comp)
-        //                 * self.calc_recurr_rel(l1 - 1, l2, no_nodes, deriv_deg)
-        //             + (no_nodes + 1) as f64
-        //                 * self.calc_recurr_rel(l1 - 1, l2, no_nodes + 1, deriv_deg)
-        //     }
-        //     (_, _, _, 0) => {
-        //         //* decrement index l2
-        //         one_over_2p * self.calc_recurr_rel(l1, l2 - 1, no_nodes - 1, deriv_deg)
-        //             + (self.alpha1 * self.one_over_alph_p * self.dist_AB_comp)
-        //                 * self.calc_recurr_rel(l1, l2 - 1, no_nodes, deriv_deg)
-        //             + (no_nodes + 1) as f64
-        //                 * self.calc_recurr_rel(l1, l2 - 1, no_nodes + 1, deriv_deg)
-        //     }
-        //     // Derivate cases
-        //     (_,_,0,_) => todo!(),
-        //     _ => todo!()
-        //     // [ ] implement the rest of the cases -> mainly derivative cases
-        // }
-        // -----------------------------------------------------------
 
         //-------------- WORKING IMPL FOR MOL INTS AND DERIVS -----------------
         match (l1, l2, no_nodes, deriv_deg) {
