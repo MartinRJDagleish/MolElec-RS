@@ -1,4 +1,5 @@
 use crate::molecule::cartesian_comp::{CC_X, CC_Y, CC_Z};
+use approx::AbsDiffEq;
 use ndarray::{Array1, ArrayView1};
 use physical_constants::ALPHA_PARTICLE_ELECTRON_MASS_RATIO;
 
@@ -19,7 +20,8 @@ struct E_herm_coeff_1d {
     alpha1: f64,
     alpha2: f64,
     one_over_alph_p: f64,
-    dist_AB_comp: f64, // x, y, or z component of the distance between A and B
+    vec_BA_comp: f64, // x, y, or z component of the vector from B to A (A_i - B_i)
+    mu: f64,          // alpha1 * alpha2 * one_over_alph_p
 }
 
 #[derive(Debug, Default)]
@@ -38,22 +40,22 @@ impl From<(E_herm_coeff_1d, E_herm_coeff_1d, E_herm_coeff_1d)> for E_herm_coeff_
 }
 
 impl E_herm_coeff_3d {
-    /// ### Note: 
+    /// ### Note:
     /// `vec_BA` is the vector from B to A, i.e. A - B (not B - A) => BA_x = A_x - B_x
-    /// 
+    ///
     /// ### Arguments
     /// ----------
     /// `alpha1` : Exponent of the first Gaussian function.
-    /// 
+    ///
     /// `alpha2` : Exponent of the second Gaussian function.
-    /// 
+    ///
     /// `vec_BA` : Vector from B to A, i.e. A - B (not B - A) => BA_x = A_x - B_x
-    /// 
+    ///
     /// ### Returns
     /// ----------
     /// `Self` : Struct containing the coefficients for the Hermite expansion of Cartesian Gaussian functions
     fn new(alpha1: f64, alpha2: f64, vec_BA: ArrayView1<f64>) -> Self {
-        let one_over_alph_p = 1.0/ (alpha1 + alpha2);
+        let one_over_alph_p = 1.0 / (alpha1 + alpha2);
         let E_ij = E_herm_coeff_1d::new(alpha1, alpha2, one_over_alph_p, vec_BA[CC_X]);
         let E_kl = E_herm_coeff_1d::new(alpha1, alpha2, one_over_alph_p, vec_BA[CC_Y]);
         let E_mn = E_herm_coeff_1d::new(alpha1, alpha2, one_over_alph_p, vec_BA[CC_Z]);
@@ -70,12 +72,15 @@ impl E_herm_coeff_3d {
 }
 
 impl E_herm_coeff_1d {
-    fn new(alpha1: f64, alpha2: f64, one_over_alph_p: f64, dist_AB_comp: f64) -> Self {
+    /// `dist_AB_comp`: x, y, or z component of the distance between A and B (A_i - B_i)
+    fn new(alpha1: f64, alpha2: f64, one_over_alph_p: f64, vec_BA_comp: f64) -> Self {
+        let mu = alpha1 * alpha2 * one_over_alph_p;
         Self {
             alpha1,
             alpha2,
             one_over_alph_p,
-            dist_AB_comp,
+            vec_BA_comp,
+            mu,
         }
     }
 
@@ -98,33 +103,71 @@ impl E_herm_coeff_1d {
         if no_nodes < 0 || no_nodes > (l1 + l2) || deriv_deg < 0 {
             return 0.0;
         }
-        let one_over_2p = 0.5 * self.one_over_alph_p;
-        let mu = self.alpha1 * self.alpha2 * self.one_over_alph_p;
-        let q = -2.0 * mu;
 
-        match (no_nodes, l1, l2, deriv_deg) {
-            // Molecular integral cases; works and is correct
-            (0, 0, 0, 0) => (-mu * self.dist_AB_comp * self.dist_AB_comp).exp(),
-            (_, _, 0, 0) => {
-                //* decrement index l1
-                one_over_2p * self.calc_recurr_rel(l1 - 1, l2, no_nodes - 1, deriv_deg)
-                    - (self.alpha2 * self.one_over_alph_p * self.dist_AB_comp)
-                        * self.calc_recurr_rel(l1 - 1, l2, no_nodes, deriv_deg)
+        //-------------- WORKING IMPL FOR MOL INTS -----------------
+        // match (no_nodes, l1, l2, deriv_deg) {
+        //     // Molecular integral cases; works and is correct
+        //     (0, 0, 0, 0) => (-mu * self.dist_AB_comp * self.dist_AB_comp).exp(),
+        //     (_, _, 0, 0) => {
+        //         //* decrement index l1
+        //         one_over_2p * self.calc_recurr_rel(l1 - 1, l2, no_nodes - 1, deriv_deg)
+        //             - (self.alpha2 * self.one_over_alph_p * self.dist_AB_comp)
+        //                 * self.calc_recurr_rel(l1 - 1, l2, no_nodes, deriv_deg)
+        //             + (no_nodes + 1) as f64
+        //                 * self.calc_recurr_rel(l1 - 1, l2, no_nodes + 1, deriv_deg)
+        //     }
+        //     (_, _, _, 0) => {
+        //         //* decrement index l2
+        //         one_over_2p * self.calc_recurr_rel(l1, l2 - 1, no_nodes - 1, deriv_deg)
+        //             + (self.alpha1 * self.one_over_alph_p * self.dist_AB_comp)
+        //                 * self.calc_recurr_rel(l1, l2 - 1, no_nodes, deriv_deg)
+        //             + (no_nodes + 1) as f64
+        //                 * self.calc_recurr_rel(l1, l2 - 1, no_nodes + 1, deriv_deg)
+        //     }
+        //     // Derivate cases
+        //     (_,_,0,_) => todo!(),
+        //     _ => todo!()
+        //     // [ ] implement the rest of the cases -> mainly derivative cases
+        // }
+        // -----------------------------------------------------------
+
+        //-------------- WORKING IMPL FOR MOL INTS AND DERIVS -----------------
+        match (l1, l2, no_nodes, deriv_deg) {
+            // Bases cases; 0th order deriv and 1st order deriv
+            (0, 0, 0, 0) => (-self.mu * self.vec_BA_comp * self.vec_BA_comp).exp(),
+            (0, 0, 0, 1) => {
+                // equiv to -2.0 * mu *  R_x * E_0^00 ↑
+                -2.0 * self.mu
+                    * self.vec_BA_comp
+                    * (-self.mu * self.vec_BA_comp * self.vec_BA_comp).exp()
+            }
+            (0, 0, 0, _) => {
+                -2.0 * self.mu
+                    * (self.vec_BA_comp * self.calc_recurr_rel(0, 0, 0, deriv_deg - 1)
+                        + deriv_deg as f64 * self.calc_recurr_rel(0, 0, 0, deriv_deg - 2))
+            }
+            (_, 0, _, _) => {
+                0.5 * self.one_over_alph_p
+                    * self.calc_recurr_rel(l1 - 1, l2, no_nodes - 1, deriv_deg)
+                    - self.alpha2
+                        * self.one_over_alph_p
+                        * (self.vec_BA_comp * self.calc_recurr_rel(l1 - 1, l2, no_nodes, deriv_deg)
+                            + deriv_deg as f64
+                                * self.calc_recurr_rel(l1 - 1, l2, no_nodes, deriv_deg - 1))
                     + (no_nodes + 1) as f64
                         * self.calc_recurr_rel(l1 - 1, l2, no_nodes + 1, deriv_deg)
             }
-            (_, _, _, 0) => {
-                //* decrement index l2
-                one_over_2p * self.calc_recurr_rel(l1, l2 - 1, no_nodes - 1, deriv_deg)
-                    + (self.alpha1 * self.one_over_alph_p * self.dist_AB_comp)
-                        * self.calc_recurr_rel(l1, l2 - 1, no_nodes, deriv_deg)
+            (_, _, _, _) => {
+                0.5 * self.one_over_alph_p
+                    * self.calc_recurr_rel(l1, l2 - 1, no_nodes - 1, deriv_deg)
+                    + self.alpha1
+                        * self.one_over_alph_p
+                        * (self.vec_BA_comp * self.calc_recurr_rel(l1, l2 - 1, no_nodes, deriv_deg)
+                            + deriv_deg as f64
+                                * self.calc_recurr_rel(l1, l2 - 1, no_nodes, deriv_deg - 1))
                     + (no_nodes + 1) as f64
                         * self.calc_recurr_rel(l1, l2 - 1, no_nodes + 1, deriv_deg)
             }
-            // Derivate cases
-            (_,_,0,_) => todo!(), 
-            _ => todo!()
-            // [ ] implement the rest of the cases -> mainly derivative cases
         }
     }
 }
@@ -151,9 +194,43 @@ mod tests {
         let l2 = 1;
         let no_nodes = 0;
         let deriv_deg = 0;
-        
+
         let result = E_ab.calc_recurr_rel(l1, l2, no_nodes, deriv_deg);
         println!("result: {}", result);
         assert_abs_diff_eq!(result, -0.0049542582177241, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_E_calc_recurr_rel_deriv_test1() {
+        let l1 = 2;
+        let l2 = 1;
+        let no_nodes = 1;
+        let deriv_deg = 2;
+        let alpha1 = 15.5;
+        let alpha2 = 10.3;
+        let test_vec_AB = Array1::from_vec(vec![0.1, 0.2, 0.3]);
+
+        let mut E_ab = E_herm_coeff_3d::new(alpha1, alpha2, ArrayView1::from(&test_vec_AB));
+
+        let result = E_ab.calc_recurr_rel(l1, l2, no_nodes, deriv_deg);
+        println!("result: {}", result);
+        assert_abs_diff_eq!(result, 0.0000021278111580, epsilon = 1e-10); // reference from TCF
+    }
+
+    #[test]
+    fn test_E_calc_recurr_rel_deriv_test2() {
+        let l1 = 2;
+        let l2 = 1;
+        let no_nodes = 2;
+        let deriv_deg = 2;
+        let alpha1 = 15.5;
+        let alpha2 = 10.3;
+        let test_vec_AB = Array1::from_vec(vec![0.1, 0.2, 0.3]);
+
+        let mut E_ab = E_herm_coeff_3d::new(alpha1, alpha2, ArrayView1::from(&test_vec_AB));
+
+        let result = E_ab.calc_recurr_rel(l1, l2, no_nodes, deriv_deg);
+        println!("result: {}", result);
+        assert_abs_diff_eq!(result,0.0000000000767396, epsilon = 1e-10); // reference from TCF 
     }
 }
