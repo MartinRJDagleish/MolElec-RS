@@ -4,6 +4,7 @@ use ndarray::{Array1, ArrayView1};
 #[derive(Debug, Default)]
 struct E_herm_coeff_3d {
     // Coefficients for the Hermite expansion of Cartesian Gaussian functions
+    // Generalized to work for normal ints AND derivatives
     // See: Molecular Electronic-Structure Theory, Helgaker, Jorgensen, Olsen, 2000,
     E_ij: E_herm_coeff_1d, // x comp
     E_kl: E_herm_coeff_1d, // y comp
@@ -16,7 +17,7 @@ struct E_herm_coeff_1d {
     // See: Molecular Electronic-Structure Theory, Helgaker, Jorgensen, Olsen, 2000,
     alpha1: f64,
     alpha2: f64,
-    alph_p: f64,
+    one_over_alph_p: f64,
     dist_AB_comp: f64, // x, y, or z component of the distance between A and B
 }
 
@@ -43,10 +44,13 @@ impl E_herm_coeff_3d {
 
         Self { E_ij, E_kl, E_mn }
     }
-    
-    // fn calc_recurr_rel(&mut self) {
-    //
-    // }
+
+    fn calc_recurr_rel(&mut self, l1: i32, l2: i32, no_nodes: i32, deriv_deg: i32) -> f64 {
+        let E_ij_val = self.E_ij.calc_recurr_rel(l1, l2, no_nodes, deriv_deg);
+        let E_kl_val = self.E_kl.calc_recurr_rel(l1, l2, no_nodes, deriv_deg);
+        let E_mn_val = self.E_mn.calc_recurr_rel(l1, l2, no_nodes, deriv_deg);
+        E_ij_val * E_kl_val * E_mn_val // return product of all three components
+    }
 }
 
 impl E_herm_coeff_1d {
@@ -54,88 +58,82 @@ impl E_herm_coeff_1d {
         Self {
             alpha1,
             alpha2,
-            alph_p,
+            one_over_alph_p: 1.0 / alph_p,
             dist_AB_comp,
         }
     }
 
-    //TODO: make this use the structs (E_herm_coeff_1d and E_herm_coeff_3d) instead of the arguments
+    //[ ] make this use the structs (E_herm_coeff_1d and E_herm_coeff_3d) instead of the arguments
+    /// Calculate the expansion coefficient for the overlap integral
+    /// between two contracted Gaussian functions.
+    ///
+    /// ### Arguments
+    /// ----------
+    /// `l1` : Cartesian angular momentum of the first Gaussian function. (for x, y, or z)
+    ///
+    /// `l2` : Cartesian angular momentum of the second Gaussian function. (for x, y, or z)
+    ///
+    /// `no_nodes` : Number of nodes in Hermite (depends on type of int, e.g. always zero for overlap).
+    ///
+    /// `deriv_deg` : Degree of derivative (0 for overlap and mol. ints, 1 for first derivative, etc.)
     #[inline]
-    pub fn calc_recurr_rel(
-        l1: i32,
-        l2: i32,
-        no_nodes: i32,
-        gauss_dist: f64,
-        alpha1: &f64,
-        alpha2: &f64,
-    ) -> f64 {
-        // Calculate the expansion coefficient for the overlap integral
-        // between two contracted Gaussian functions.
-        //
-        // # Arguments
-        // ----------
-        // l1 : i32
-        //    Angular momentum of the first Gaussian function.
-        // l2 : i32
-        //   Angular momentum of the second Gaussian function.
-        // no_nodes : i32
-        //   Number of nodes in Hermite (depends on type of int, e.g. always zero for overlap).
-        // gauss_dist : f64
-        //   Distance between the two Gaussian functions (from the origin)
-        // alpha1 : f64
-        //   Exponent of the first Gaussian function.
-        // alpha2 : f64
-        //   Exponent of the second Gaussian function.
-        //
-
-        let p_recip = (alpha1 + alpha2).recip();
-        let q = alpha1 * alpha2 * p_recip;
+    pub fn calc_recurr_rel(&self, l1: i32, l2: i32, no_nodes: i32, deriv_deg: i32) -> f64 {
         // Early return
-        if no_nodes < 0 || no_nodes > (l1 + l2) {
+        if no_nodes < 0 || no_nodes > (l1 + l2) || deriv_deg < 0 {
             return 0.0;
         }
+        let one_over_2p = 0.5 * self.one_over_alph_p;
+        let mu = self.alpha1 * self.alpha2 * self.one_over_alph_p;
+        let q = -2.0 * mu;
 
-        match (no_nodes, l1, l2) {
-            (0, 0, 0) => (-q * gauss_dist * gauss_dist).exp(),
-            (_, _, 0) => {
+        match (no_nodes, l1, l2, deriv_deg) {
+            // Molecular integral cases
+            (0, 0, 0, 0) => (-mu * self.dist_AB_comp * self.dist_AB_comp).exp(),
+            (_, _, 0, 0) => {
                 //* decrement index l1
-                0.5 * p_recip
-                    * Self::calc_recurr_rel(l1 - 1, l2, no_nodes - 1, gauss_dist, alpha1, alpha2)
-                    - (q * gauss_dist / alpha1)
-                        * Self::calc_recurr_rel(l1 - 1, l2, no_nodes, gauss_dist, alpha1, alpha2)
+                one_over_2p * self.calc_recurr_rel(l1 - 1, l2, no_nodes - 1, deriv_deg)
+                    - (self.alpha2 * self.one_over_alph_p * self.dist_AB_comp)
+                        * self.calc_recurr_rel(l1 - 1, l2, no_nodes, deriv_deg)
                     + (no_nodes + 1) as f64
-                        * Self::calc_recurr_rel(
-                            l1 - 1,
-                            l2,
-                            no_nodes + 1,
-                            gauss_dist,
-                            alpha1,
-                            alpha2,
-                        )
+                        * self.calc_recurr_rel(l1 - 1, l2, no_nodes + 1, deriv_deg)
             }
-            (_, _, _) => {
+            (_, _, _, 0) => {
                 //* decrement index l2
-                0.5 * p_recip
-                    * Self::calc_recurr_rel(l1, l2 - 1, no_nodes - 1, gauss_dist, alpha1, alpha2)
-                    + (q * gauss_dist / alpha2)
-                        * Self::calc_recurr_rel(l1, l2 - 1, no_nodes, gauss_dist, alpha1, alpha2)
+                one_over_2p * self.calc_recurr_rel(l1, l2 - 1, no_nodes - 1, deriv_deg)
+                    + (self.alpha1 * self.one_over_alph_p * self.dist_AB_comp)
+                        * self.calc_recurr_rel(l1, l2 - 1, no_nodes, deriv_deg)
                     + (no_nodes + 1) as f64
-                        * Self::calc_recurr_rel(
-                            l1,
-                            l2 - 1,
-                            no_nodes + 1,
-                            gauss_dist,
-                            alpha1,
-                            alpha2,
-                        )
+                        * self.calc_recurr_rel(l1, l2 - 1, no_nodes + 1, deriv_deg)
             }
+            // Derivate cases
+            _ => todo!() // [ ] implement the rest of the cases -> mainly derivative cases
         }
     }
 }
 
 impl R_herm_aux_int {
     // Use Boys function to calculate the Hermite auxiliary integral
-    // fn new() {
-    //
-    // }
+    fn new() {
+        todo!();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_E_calc_recurr_rel() {
+        let test_vec_AB = Array1::from_vec(vec![1.0, 2.0, 3.0]);
+        let mut E_ab = E_herm_coeff_3d::new(0.5, 0.5, 1.0, ArrayView1::from(&test_vec_AB));
+
+        let l1 = 2;
+        let l2 = 1;
+        let no_nodes = 0;
+        let deriv_deg = 0;
+        
+        let result = E_ab.calc_recurr_rel(l1, l2, no_nodes, deriv_deg);
+        println!("result: {}", result);
+        // assert_eq!(result, 0.6065306597126334);
+    }
 }
