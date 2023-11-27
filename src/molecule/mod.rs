@@ -1,4 +1,4 @@
-mod atom;
+pub(crate) mod atom;
 pub(crate) mod cartesian_comp;
 
 use atom::Atom;
