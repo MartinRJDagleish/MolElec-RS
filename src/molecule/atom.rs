@@ -1,4 +1,4 @@
-use crate::molecule::PSE_ELEM_SYMS_STR;
+use crate::molecule::{PseElemSym, PSE_ELEM_SYMS_STR};
 use std::ops::{Index, IndexMut, Sub};
 
 #[rustfmt::skip]
@@ -21,6 +21,7 @@ pub struct Atom {
     z: f64,
     pub z_val: u32,
     pub mass: f64,
+    pse_sym: PseElemSym,
 }
 
 impl Index<usize> for Atom {
@@ -68,7 +69,7 @@ impl<'a> Sub for &'a Atom {
 }
 
 impl Atom {
-    pub fn new(x_inp: f64, y_inp: f64, z_inp: f64, z_val: u32) -> Self {
+    pub fn new(x_inp: f64, y_inp: f64, z_inp: f64, z_val: u32, pse_sym: PseElemSym) -> Self {
         let mass = ATOMIC_MASSES_IN_AMU[z_val as usize];
         Self {
             x: x_inp,
@@ -76,10 +77,15 @@ impl Atom {
             z: z_inp,
             z_val,
             mass,
+            pse_sym
         }
     }
 
     pub fn z_val_to_sym_str(z_val: usize) -> String {
         PSE_ELEM_SYMS_STR[z_val].to_string()
+    }
+    
+    pub fn get_pse_sym(&self) -> &PseElemSym {
+        &self.pse_sym
     }
 }

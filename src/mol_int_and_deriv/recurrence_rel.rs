@@ -46,12 +46,9 @@ impl E_herm_coeff_3d {
     ///
     /// ### Arguments
     /// ----------
-    /// `alpha1` : Exponent of the first Gaussian function.
-    ///
-    /// `alpha2` : Exponent of the second Gaussian function.
-    ///
-    /// `vec_BA` : Vector from B to A, i.e. A - B (not B - A) => BA_x = A_x - B_x
-    ///
+    /// - `alpha1` : Exponent of the first Gaussian function.
+    /// - `alpha2` : Exponent of the second Gaussian function.
+    /// - `vec_BA` : Vector from B to A, i.e. A - B (not B - A) => BA_x = A_x - B_x
     fn new(alpha1: f64, alpha2: f64, vec_BA: ArrayView1<f64>) -> Self {
         let one_over_alph_p = 1.0 / (alpha1 + alpha2);
         let E_ij = E_herm_coeff_1d::new(alpha1, alpha2, one_over_alph_p, vec_BA[CC_X]);
@@ -163,8 +160,8 @@ impl R_herm_aux_int {
         let mut boys_values = vec![0.0; boys_capacity]; // zero initialized
         boys_values[boys_capacity - 1] = boys((boys_capacity - 1) as u64, boys_inp);
         for ang_mom in (1..boys_capacity).rev() {
-            boys_values[ang_mom - 1] = (2.0 * boys_inp * boys_values[ang_mom] + (-boys_inp).exp())
-                / ((2 * (ang_mom - 1)) as f64 + 1.0);
+            boys_values[ang_mom - 1] =
+                Self::calc_boys_down_recur(boys_values[ang_mom], ang_mom, boys_inp);
         }
 
         Self {
