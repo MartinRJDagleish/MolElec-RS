@@ -37,19 +37,25 @@ struct BasisSetDefAtom {
     no_prim_per_shell: Vec<usize>,
 }
 
+impl BasisSetDefAtom {
+    pub(crate) fn get_n_prim_shell(&self, shell_idx: usize) -> usize {
+        self.no_prim_per_shell[shell_idx]
+    }
+}
+
 impl BasisSetDefTotal {
-    pub fn new(basis_set_name: String) -> Self {
+    pub fn new(basis_set_name: &str) -> Self {
         let basis_set_defs: HashMap<PseElemSym, BasisSetDefAtom> =
-            Self::parse_basis_set_file_psi4(basis_set_name.clone()).unwrap();
+            Self::parse_basis_set_file_psi4(basis_set_name).unwrap();
 
         Self {
-            basis_set_name,
+            basis_set_name: basis_set_name.to_string(),
             basis_set_defs_hm: basis_set_defs,
         }
     }
 
-    pub fn parse_basis_set_file_psi4(
-        basis_set_name: String,
+    fn parse_basis_set_file_psi4(
+        basis_set_name: &str,
     ) -> Result<HashMap<PseElemSym, BasisSetDefAtom>, Box<dyn std::error::Error>> {
         let mut basis_set_defs: HashMap<PseElemSym, BasisSetDefAtom> = HashMap::new();
 
@@ -130,6 +136,11 @@ impl BasisSetDefTotal {
 
         Ok(basis_set_defs)
     }
+    
+
+    pub fn get_basis_set_def_atom(&self, elem_sym: &PseElemSym) -> Option<&BasisSetDefAtom> {
+        self.basis_set_defs_hm.get(elem_sym)
+    }
 }
 
 #[cfg(test)]
@@ -137,8 +148,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parser() {
-        let basis_set_name = "cc-pVTZ".to_string();
+    fn test_parser1() {
+        let basis_set_name = "cc-pVTZ";
+        let basis_set_defs = BasisSetDefTotal::new(basis_set_name);
+        println!("{:?}", basis_set_defs.basis_set_defs_hm.get(&PseElemSym::H));
+        // println!("{:?}", basis_set_defs);
+    }
+
+    #[test]
+    fn test_parser2() {
+        let basis_set_name = "sto-3g";
         let basis_set_defs = BasisSetDefTotal::new(basis_set_name);
         println!("{:?}", basis_set_defs.basis_set_defs_hm.get(&PseElemSym::H));
         // println!("{:?}", basis_set_defs);
