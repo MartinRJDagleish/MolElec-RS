@@ -190,17 +190,14 @@ impl Geometry {
     }
 }
 
-type GeometryResult = Result<(Vec<u32>, Array2<f64>, usize), Box<dyn std::error::Error>>;
+type GeometryResult = Result<(Vec<u32>, Array2<f64>, Vec<Atom>, usize), Box<dyn std::error::Error>>;
 #[allow(non_snake_case)]
 impl Molecule {
     pub fn new(geom_filepath: &str, charge: i32) -> Self {
         let tot_charge = charge;
-        let (z_vals, geom_matr, no_atoms) = Self::read_xyz_xmol_inputfile(geom_filepath).unwrap();
+        let (z_vals, geom_matr, atoms, no_atoms) =
+            Self::read_xyz_xmol_inputfile(geom_filepath).unwrap();
         let no_elec = z_vals.iter().sum::<u32>() as usize + tot_charge as usize;
-
-        //* Create atoms from input
-        let mut atoms: Vec<Atom> = Vec::with_capacity(no_atoms);
-        Self::create_atoms_from_input(&mut atoms, &z_vals, &geom_matr);
 
         Self {
             tot_charge,
@@ -213,17 +210,18 @@ impl Molecule {
         }
     }
 
-    fn create_atoms_from_input(atoms: &mut Vec<Atom>, z_vals: &[u32], geom_matr: &Array2<f64>) {
-        for (at_idx, z_val) in z_vals.iter().enumerate() {
-            let atom = Atom::new(
-                geom_matr[(at_idx, CC_X)],
-                geom_matr[(at_idx, CC_Y)],
-                geom_matr[(at_idx, CC_Z)],
-                *z_val,
-            );
-            atoms.push(atom);
-        }
-    }
+    /// DEPRECATED: original version
+    // fn create_atoms_from_input(atoms: &mut Vec<Atom>, z_vals: &[u32], geom_matr: &Array2<f64>) {
+    //     for (at_idx, z_val) in z_vals.iter().enumerate() {
+    //         let atom = Atom::new(
+    //             geom_matr[(at_idx, CC_X)],
+    //             geom_matr[(at_idx, CC_Y)],
+    //             geom_matr[(at_idx, CC_Z)],
+    //             *z_val,
+    //         );
+    //         atoms.push(atom);
+    //     }
+    // }
 
     fn read_xyz_xmol_inputfile(geom_filename: &str) -> GeometryResult {
         println!("Inputfile: {geom_filename}");
@@ -237,33 +235,42 @@ impl Molecule {
 
         let no_atoms: usize = lines.next().unwrap().trim().parse()?;
 
-        let mut at_symbs: Vec<String> = Vec::with_capacity(no_atoms);
+        let mut at_strs: Vec<String> = Vec::with_capacity(no_atoms);
         let mut geom_matr: Array2<f64> = Array2::zeros((no_atoms, 3));
 
         // skip the comment line
         for (at_idx, line) in lines.skip(1).enumerate() {
             let mut line_parts = line.split_whitespace(); // split whitespace does "trim" automatically
 
-            at_symbs.push(line_parts.next().unwrap().to_string());
+            at_strs.push(line_parts.next().unwrap().to_string());
             for cc in [CC_X, CC_Y, CC_Z] {
                 geom_matr[(at_idx, cc)] = line_parts.next().unwrap().parse().unwrap();
             }
-        }
-
-        //* Create z_vals from atom symbols above */
-        let mut z_vals: Vec<u32> = Vec::with_capacity(no_atoms);
-        for atom in at_symbs {
-            let pse_sym = PseElemSym::from_str(&atom)
-                .expect("PseElemSym does not exist; check your input again!");
-            let z_val = PSE_ELEM_Z_VAL_HMAP.get(&pse_sym).unwrap_or(&0).to_owned();
-            z_vals.push(z_val);
         }
 
         //* Convert geom_matr from Angstrom to Bohr (atomic units) */
         const AA_TO_BOHR: f64 = 1.0e-10 / physical_constants::BOHR_RADIUS;
         geom_matr.mapv_inplace(|x| x * AA_TO_BOHR);
 
-        Ok((z_vals, geom_matr, no_atoms))
+        //* Create z_vals from atom symbols above */
+        let mut z_vals: Vec<u32> = Vec::with_capacity(no_atoms);
+        let mut atoms: Vec<Atom> = Vec::with_capacity(no_atoms);
+        for (at_idx, at_str) in at_strs.iter().enumerate() {
+            let pse_sym = PseElemSym::from_str(&at_str)
+                .expect("PseElemSym does not exist; check your input again!");
+            let z_val = PSE_ELEM_Z_VAL_HMAP.get(&pse_sym).unwrap_or(&0).to_owned();
+            let atom = Atom::new(
+                geom_matr[(at_idx, CC_X)],
+                geom_matr[(at_idx, CC_Y)],
+                geom_matr[(at_idx, CC_Z)],
+                z_val,
+                pse_sym,
+            );
+            atoms.push(atom);
+            z_vals.push(z_val);
+        }
+
+        Ok((z_vals, geom_matr, atoms, no_atoms))
     }
 
     #[inline(always)]
@@ -368,6 +375,10 @@ impl Molecule {
             atom[CC_Y] = self.geom.coords_matr[(at_idx, CC_Y)];
             atom[CC_Z] = self.geom.coords_matr[(at_idx, CC_Z)];
         }
+    }
+
+    pub fn atoms_iter(&self) -> impl Iterator<Item = &Atom> {
+        self.atoms.iter()
     }
 }
 
