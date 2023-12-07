@@ -2,7 +2,7 @@ mod parser;
 
 use crate::molecule::{atom::Atom, Molecule};
 use ndarray::Array1;
-use parser::BasisSetDefTotal;
+use parser::{BasisSetDefAtom, BasisSetDefTotal};
 
 /// # Basis set
 /// ## Arguments
@@ -48,41 +48,97 @@ struct PGTO {
 }
 
 impl<'a> BasisSet<'a> {
-    pub fn new(basisset_name: &str, mol: &Molecule) -> Self {
+    pub fn new(basisset_name: &str, mol: &'a Molecule) -> Self {
         let basis_set_def_total = parser::BasisSetDefTotal::new(basisset_name);
-        let shells: Vec<Shell<'_>> = Vec::<Shell>::new();
+        // Potential speedup: Preallocate vector with correct size
+        let mut shells: Vec<Shell<'_>> = Vec::<Shell>::new();
         for atom in mol.atoms_iter() {
-            let basis_set_def = basis_set_def_total
+            // TODO: Potential redesign necessarry: BasisSetDefAtom contains vectors of different lengths
+            // -> better grouping reasonable?
+            let basis_set_def_at = basis_set_def_total
                 .get_basis_set_def_atom(atom.get_pse_sym())
                 .unwrap();
-            todo!();
-            // TODO: Potential redesign necessarry: BasisSetDefAtom contains vectors of different lengths
-            // -> better grouping reasonable? 
-            
+            let no_shells = basis_set_def_at.get_no_shells();
+            for shell_idx in 0..no_shells {
+                let shell = Shell::new(atom, shell_idx, basis_set_def_at);
+                shells.push(shell);
+            }
+
             // let prim_per_shell = basis_set_def.get_n_prim_shell();
             // let shell = Shell::new(atom, &basis_set_def_total);
             // shells.push(shell);
+            todo!();
         }
 
+        // TODO: change for UHF
         Self {
             name: basisset_name.to_string(),
-            // no_ao,
-            // no_bf,
-            // shells,
-            // use_pure_am,
+            no_ao: shells.len(),
+            no_bf: shells.len(),
+            shells,
+            use_pure_am: false, // hard code for now
         }
     }
 }
 
 impl<'a> Shell<'a> {
-    fn new(atom: &'a Atom, basis_set_def_total: &BasisSetDefTotal) -> Self {
-        let cgtos = Vec::<CGTO>::new();
-
+    fn new(atom: &'a Atom, shell_idx: usize, basis_set_def_at: &BasisSetDefAtom) -> Self {
+        let mut cgtos = Vec::<CGTO>::new();
+        let nprim_p_shell = basis_set_def_at.get_n_prim_p_shell(shell_idx);
+        let curr_exp_coeff_idx = basis_set_def_at
+            .no_prim_per_shell_iter()
+            .take(shell_idx)
+            .sum::<usize>() - 1;
+        
+        // let ang_mom
+        
+        for pgto_idx in (curr_exp_coeff_idx..curr_exp_coeff_idx+nprim_p_shell) {
+                        
+        }
+        
+        
+        // for pgto_idx in 0..prim_per_shell {
+        //     let pgto_exp = basis_set_def_at.pgto_exps[pgto_idx];
+        //     let pgto_coeff = basis_set_def_at.pgto_coeffs[pgto_idx];
+        //     let ang_mom_char = basis_set_def_at.ang_mom_chars[pgto_idx];
+        //     let ang_mom = match ang_mom_char {
+        //         parser::AngMomChar::S => 0,
+        //         parser::AngMomChar::P => 1,
+        //         parser::AngMomChar::D => 2,
+        //         parser::AngMomChar::F => 3,
+        //         parser::AngMomChar::G => 4,
+        //         parser::AngMomChar::H => 5,
+        //         parser::AngMomChar::I => 6,
+        //         parser::AngMomChar::J => 7,
+        //         parser::AngMomChar::K => 8,
+        //         parser::AngMomChar::L => 9,
+        //         parser::AngMomChar::M => 10,
+        //         parser::AngMomChar::N => 11,
+        //         parser::AngMomChar::O => 12,
+        //         parser::AngMomChar::SP => 0,
+        //     };
+        //     let ang_mom_vec = match ang_mom_char {
+        //         parser::AngMomChar::S => [0, 0, 0],
+        //         parser::AngMomChar::P => [1, 0, 0],
+        //         parser::AngMomChar::D => [0, 1, 0],
+        //         parser::AngMomChar::F => [0, 0, 1],
+        //         parser::AngMomChar::G => [2, 0, 0],
+        //         parser::AngMomChar::H => [0, 2, 0],
+        //         parser::AngMomChar::I => [0, 0, 2],
+        //         parser::AngMomChar::J => [1, 1, 0],
+        //         parser::AngMomChar::K => [1, 0, 1],
+        //         parser::AngMomChar::L => [0, 1, 1],
+        //         parser::AngMomChar::M => [3, 0, 0],
+        //         parser::AngMomChar::N => [0, 3, 0],
+        //         parser::AngMomChar::O => [0, 0, 3],
+        //         parser::AngMomChar::SP => [0,
+        // }
 
         Self {
             ang_mom: 0,
             is_pure_am: false,
             cgtos: Vec::<CGTO>::new(),
+            center_pos: atom,
         }
     }
 }
@@ -110,3 +166,14 @@ impl PGTO {
         }
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn create_basis_set() {
+        println!("Test create_basis_set");
+    }
+}
+
+

@@ -22,6 +22,67 @@ enum AngMomChar {
     SP,
 }
 
+impl AngMomChar {
+    pub fn get_ang_mom_triple(&self) -> Vec<[usize; 3]> {
+        let max = match self {
+            AngMomChar::S => 0,
+            AngMomChar::P => 1,
+            AngMomChar::D => 2,
+            AngMomChar::F => 3,
+            AngMomChar::G => 4,
+            AngMomChar::H => 5,
+            AngMomChar::I => 6,
+            AngMomChar::J => todo!(),
+            AngMomChar::K => todo!(),
+            AngMomChar::L => todo!(),
+            AngMomChar::M => todo!(),
+            AngMomChar::N => todo!(),
+            AngMomChar::O => todo!(),
+            AngMomChar::SP => 1,
+        };
+
+        let mut result = Vec::with_capacity(2 * max + 1);
+        for k in 0..=max {
+            for j in 0..=max {
+                for i in 0..=max {
+                    if i + j + k == max {
+                        result.push([i, j, k]);
+                    }
+                }
+            }
+        }
+
+        match self {
+            AngMomChar::SP => {
+                result.insert(0, [0, 0, 0]);
+            }
+            _ => (),
+        }
+        result
+    }
+}
+
+// impl AngMomChar {
+//     pub fn get_ang_mom_triple(&self) -> Vec<[usize; 3]> {
+//         match self {
+//             AngMomChar::S => [[0, 0, 0]],
+//             AngMomChar::P => [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+//             AngMomChar::D => [[2,0,0], [1,1,0], [1,0,1], [0,2,0], [0,1,1], [0,0,2]],
+//             AngMomChar::F => [[3,0,0], [2,1,0], [2,0,1], [1,2,0], [1,1,1], [1,0,2], [0,3,0], [0,2,1], [0,1,2], [0,0,3]],
+//             AngMomChar::G => [[4,0,0], [3,1,0], [3,0,1], [2,2,0], [2,1,1], [2,0,2], [1,3,0], [1,2,1], [1,1,2], [1,0,3], [0,4,0], [0,3,1], [0,2,2], [0,1,3], [0,0,4]],
+//             AngMomChar::H => [[5,0,0], [4,1,0], [4,0,1], [3,2,0], [3,1,1], [3,0,2], [2,3,0], [2,2,1], [2,1,2], [2,0,3], [1,4,0], [1,3,1], [1,2,2], [1,1,3], [1,0,4], [0,5,0], [0,4,1], [0,3,2], [0,2,3], [0,1,4], [0,0,5]],
+//             AngMomChar::I => [[6,0,0], [5,1,0], [5,0,1], [4,2,0], [4,1,1], [4,0,2], [3,3,0], [3,2,1], [3,1,2], [3,0,3], [2,4,0], [2,3,1], [2,2,2], [2,1,3], [2,0,4], [1,5,0], [1,4,1], [1,3,2], [1,2,3], [1,1,4], [1,0,5], [0,6,0], [0,5,1], [0,4,2], [0,3,3], [0,2,4], [0,1,5], [0,0,6]],
+//             AngMomChar::J => todo!(),
+//             AngMomChar::K => todo!(),
+//             AngMomChar::L => todo!(),
+//             AngMomChar::M => todo!(),
+//             AngMomChar::N => todo!(),
+//             AngMomChar::O => todo!(),
+//             AngMomChar::SP => [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]],
+//         }
+//     }
+// }
+
 #[derive(Debug, Default)]
 pub struct BasisSetDefTotal {
     basis_set_name: String,
@@ -29,7 +90,7 @@ pub struct BasisSetDefTotal {
 }
 
 #[derive(Debug, Default, Clone)]
-struct BasisSetDefAtom {
+pub struct BasisSetDefAtom {
     // elem_sym: PseElemSym, // no need to store elem_sym redundantly
     pgto_exps: Vec<f64>,
     pgto_coeffs: Vec<f64>,
@@ -38,8 +99,16 @@ struct BasisSetDefAtom {
 }
 
 impl BasisSetDefAtom {
-    pub(crate) fn get_n_prim_shell(&self, shell_idx: usize) -> usize {
+    pub(crate) fn get_n_prim_p_shell(&self, shell_idx: usize) -> usize {
         self.no_prim_per_shell[shell_idx]
+    }
+
+    pub(crate) fn get_no_shells(&self) -> usize {
+        self.no_prim_per_shell.len()
+    }
+
+    pub(crate) fn no_prim_per_shell_iter(&self) -> std::slice::Iter<usize> {
+        self.no_prim_per_shell.iter()
     }
 }
 
@@ -136,7 +205,6 @@ impl BasisSetDefTotal {
 
         Ok(basis_set_defs)
     }
-    
 
     pub fn get_basis_set_def_atom(&self, elem_sym: &PseElemSym) -> Option<&BasisSetDefAtom> {
         self.basis_set_defs_hm.get(elem_sym)
@@ -161,5 +229,11 @@ mod tests {
         let basis_set_defs = BasisSetDefTotal::new(basis_set_name);
         println!("{:?}", basis_set_defs.basis_set_defs_hm.get(&PseElemSym::H));
         // println!("{:?}", basis_set_defs);
+    }
+
+    #[test]
+    fn test_ang_mom_char() {
+        let ang_mom_char = AngMomChar::from_str("D").unwrap();
+        println!("{:?}", ang_mom_char.get_ang_mom_triple());
     }
 }
