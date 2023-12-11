@@ -4,44 +4,31 @@ use strum_macros::EnumString;
 
 // #[derive(PartialEq)]
 #[derive(Debug, Default, EnumString, Clone)]
-enum AngMomChar {
+#[repr(i32)]
+pub enum AngMomChar {
     #[default]
-    S,
-    P,
-    D,
-    F,
-    G,
-    H,
-    I,
-    J,
-    K,
-    L,
-    M,
-    N,
-    O,
-    SP,
+    S = 0,
+    P = 1,
+    D = 2,
+    F = 3,
+    G = 4,
+    H = 5,
+    I = 6,
+    J = 7,
+    SP = 10,
 }
 
 impl AngMomChar {
-    pub fn get_ang_mom_triple(&self) -> Vec<[usize; 3]> {
+    pub fn get_ang_mom_triple(&self) -> Vec<[i32; 3]> {
         let max = match self {
-            AngMomChar::S => 0,
-            AngMomChar::P => 1,
-            AngMomChar::D => 2,
-            AngMomChar::F => 3,
-            AngMomChar::G => 4,
-            AngMomChar::H => 5,
-            AngMomChar::I => 6,
-            AngMomChar::J => todo!(),
-            AngMomChar::K => todo!(),
-            AngMomChar::L => todo!(),
-            AngMomChar::M => todo!(),
-            AngMomChar::N => todo!(),
-            AngMomChar::O => todo!(),
             AngMomChar::SP => 1,
+            _ => self.clone() as i32,
         };
+        let mut result = Vec::with_capacity(2 * max as usize + 1);
+        if let AngMomChar::SP = self {
+            result.insert(0, [0, 0, 0]);
+        }
 
-        let mut result = Vec::with_capacity(2 * max + 1);
         for k in 0..=max {
             for j in 0..=max {
                 for i in 0..=max {
@@ -52,36 +39,9 @@ impl AngMomChar {
             }
         }
 
-        match self {
-            AngMomChar::SP => {
-                result.insert(0, [0, 0, 0]);
-            }
-            _ => (),
-        }
         result
     }
 }
-
-// impl AngMomChar {
-//     pub fn get_ang_mom_triple(&self) -> Vec<[usize; 3]> {
-//         match self {
-//             AngMomChar::S => [[0, 0, 0]],
-//             AngMomChar::P => [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-//             AngMomChar::D => [[2,0,0], [1,1,0], [1,0,1], [0,2,0], [0,1,1], [0,0,2]],
-//             AngMomChar::F => [[3,0,0], [2,1,0], [2,0,1], [1,2,0], [1,1,1], [1,0,2], [0,3,0], [0,2,1], [0,1,2], [0,0,3]],
-//             AngMomChar::G => [[4,0,0], [3,1,0], [3,0,1], [2,2,0], [2,1,1], [2,0,2], [1,3,0], [1,2,1], [1,1,2], [1,0,3], [0,4,0], [0,3,1], [0,2,2], [0,1,3], [0,0,4]],
-//             AngMomChar::H => [[5,0,0], [4,1,0], [4,0,1], [3,2,0], [3,1,1], [3,0,2], [2,3,0], [2,2,1], [2,1,2], [2,0,3], [1,4,0], [1,3,1], [1,2,2], [1,1,3], [1,0,4], [0,5,0], [0,4,1], [0,3,2], [0,2,3], [0,1,4], [0,0,5]],
-//             AngMomChar::I => [[6,0,0], [5,1,0], [5,0,1], [4,2,0], [4,1,1], [4,0,2], [3,3,0], [3,2,1], [3,1,2], [3,0,3], [2,4,0], [2,3,1], [2,2,2], [2,1,3], [2,0,4], [1,5,0], [1,4,1], [1,3,2], [1,2,3], [1,1,4], [1,0,5], [0,6,0], [0,5,1], [0,4,2], [0,3,3], [0,2,4], [0,1,5], [0,0,6]],
-//             AngMomChar::J => todo!(),
-//             AngMomChar::K => todo!(),
-//             AngMomChar::L => todo!(),
-//             AngMomChar::M => todo!(),
-//             AngMomChar::N => todo!(),
-//             AngMomChar::O => todo!(),
-//             AngMomChar::SP => [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]],
-//         }
-//     }
-// }
 
 #[derive(Debug, Default)]
 pub struct BasisSetDefTotal {
@@ -92,10 +52,10 @@ pub struct BasisSetDefTotal {
 #[derive(Debug, Default, Clone)]
 pub struct BasisSetDefAtom {
     // elem_sym: PseElemSym, // no need to store elem_sym redundantly
-    pgto_exps: Vec<f64>,
-    pgto_coeffs: Vec<f64>,
-    ang_mom_chars: Vec<AngMomChar>,
-    no_prim_per_shell: Vec<usize>,
+    pub pgto_exps: Vec<f64>,
+    pub pgto_coeffs: Vec<f64>,
+    pub ang_mom_chars: Vec<AngMomChar>,
+    pub no_prim_per_shell: Vec<usize>,
 }
 
 impl BasisSetDefAtom {
@@ -109,6 +69,10 @@ impl BasisSetDefAtom {
 
     pub(crate) fn no_prim_per_shell_iter(&self) -> std::slice::Iter<usize> {
         self.no_prim_per_shell.iter()
+    }
+
+    pub(crate) fn get_ang_mom_chars(&self, idx: usize) -> &AngMomChar {
+        &self.ang_mom_chars[idx]
     }
 }
 
@@ -164,11 +128,10 @@ impl BasisSetDefTotal {
                 // Check if previous basis_set_def_atom is done
                 if !basis_set_def_atom.pgto_coeffs.is_empty() {
                     // Add the basis using the element symbol as key
-                    basis_set_defs.insert(elem_sym, basis_set_def_atom.clone());
-                } else {
+                    basis_set_defs.insert(elem_sym, basis_set_def_atom);
                     // Create new basis_set_def_atom
                     basis_set_def_atom = BasisSetDefAtom::default();
-                }
+                } 
             } else if data_line.chars().next().unwrap().is_alphabetic() {
                 //3. Check if the line starts with an PseElemSymb or AngMomChar
                 let line_split: Vec<&str> = data_line.split_whitespace().collect();
@@ -228,6 +191,18 @@ mod tests {
         let basis_set_name = "sto-3g";
         let basis_set_defs = BasisSetDefTotal::new(basis_set_name);
         println!("{:?}", basis_set_defs.basis_set_defs_hm.get(&PseElemSym::H));
+        // println!("{:?}", basis_set_defs);
+    }
+
+    #[test]
+    fn test_parser3() {
+        let basis_set_name = "sto-3g";
+        let basis_set_defs = BasisSetDefTotal::new(basis_set_name);
+        let basis_set_def_at = basis_set_defs
+            .basis_set_defs_hm
+            .get(&PseElemSym::O)
+            .unwrap();
+        println!("{:?}", basis_set_def_at);
         // println!("{:?}", basis_set_defs);
     }
 
