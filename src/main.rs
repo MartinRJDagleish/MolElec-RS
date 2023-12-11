@@ -1,3 +1,4 @@
+#![allow(dead_code, clippy::upper_case_acronyms)]
 #[macro_use]
 extern crate lazy_static;
 extern crate ndarray;
@@ -22,7 +23,7 @@ fn main() {
     print_prog_header();
 
     exec_times.start("Molecule");
-    let mol = Molecule::new("data/xyz/water90.xyz", 0);
+    let _mol = Molecule::new("data/xyz/water90.xyz", 0);
     // println!("Molecule: {:?}", mol);
     exec_times.stop("Molecule");
 

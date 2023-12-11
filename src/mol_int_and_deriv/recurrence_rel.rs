@@ -1,20 +1,21 @@
+#![allow(non_snake_case)]
 use crate::molecule::cartesian_comp::{CC_X, CC_Y, CC_Z};
 use boys::micb25::boys;
 use ndarray::{Array1, ArrayView1};
 use ndarray_linalg::Norm;
 
 #[derive(Debug, Default)]
-struct E_herm_coeff_3d {
+struct EHermCoeff3d {
     // Coefficients for the Hermite expansion of Cartesian Gaussian functions
     // Generalized to work for normal ints AND derivatives
     // See: Molecular Electronic-Structure Theory, Helgaker, Jorgensen, Olsen, 2000,
-    E_ij: E_herm_coeff_1d, // x comp
-    E_kl: E_herm_coeff_1d, // y comp
-    E_mn: E_herm_coeff_1d, // z comp
+    E_ij: EHermCoeff1d, // x comp
+    E_kl: EHermCoeff1d, // y comp
+    E_mn: EHermCoeff1d, // z comp
 }
 
 #[derive(Debug, Default)]
-struct E_herm_coeff_1d {
+struct EHermCoeff1d {
     // Coefficients for the Hermite expansion of Cartesian Gaussian functions (1d)
     // See: Molecular Electronic-Structure Theory, Helgaker, Jorgensen, Olsen, 2000,
     alpha1: f64,
@@ -25,7 +26,7 @@ struct E_herm_coeff_1d {
 }
 
 #[derive(Debug, Default)]
-struct R_herm_aux_int {
+struct RHermAuxInt {
     // Hermite auxiliary int for the Hermite expansion of Cartesian Gaussian functions
     // See: Molecular Electronic-Structure Theory, Helgaker, Jorgensen, Olsen, 2000,
     boys_values: Vec<f64>,
@@ -34,13 +35,13 @@ struct R_herm_aux_int {
     alph_p: f64,
 }
 
-impl From<(E_herm_coeff_1d, E_herm_coeff_1d, E_herm_coeff_1d)> for E_herm_coeff_3d {
-    fn from((E_ij, E_kl, E_mn): (E_herm_coeff_1d, E_herm_coeff_1d, E_herm_coeff_1d)) -> Self {
+impl From<(EHermCoeff1d, EHermCoeff1d, EHermCoeff1d)> for EHermCoeff3d {
+    fn from((E_ij, E_kl, E_mn): (EHermCoeff1d, EHermCoeff1d, EHermCoeff1d)) -> Self {
         Self { E_ij, E_kl, E_mn }
     }
 }
 
-impl E_herm_coeff_3d {
+impl EHermCoeff3d {
     /// ### Note:
     /// `vec_BA` is the vector from B to A, i.e. A - B (not B - A) => BA_x = A_x - B_x
     ///
@@ -51,9 +52,9 @@ impl E_herm_coeff_3d {
     /// - `vec_BA` : Vector from B to A, i.e. A - B (not B - A) => BA_x = A_x - B_x
     fn new(alpha1: f64, alpha2: f64, vec_BA: ArrayView1<f64>) -> Self {
         let one_over_alph_p = 1.0 / (alpha1 + alpha2);
-        let E_ij = E_herm_coeff_1d::new(alpha1, alpha2, one_over_alph_p, vec_BA[CC_X]);
-        let E_kl = E_herm_coeff_1d::new(alpha1, alpha2, one_over_alph_p, vec_BA[CC_Y]);
-        let E_mn = E_herm_coeff_1d::new(alpha1, alpha2, one_over_alph_p, vec_BA[CC_Z]);
+        let E_ij = EHermCoeff1d::new(alpha1, alpha2, one_over_alph_p, vec_BA[CC_X]);
+        let E_kl = EHermCoeff1d::new(alpha1, alpha2, one_over_alph_p, vec_BA[CC_Y]);
+        let E_mn = EHermCoeff1d::new(alpha1, alpha2, one_over_alph_p, vec_BA[CC_Z]);
 
         Self { E_ij, E_kl, E_mn }
     }
@@ -66,7 +67,7 @@ impl E_herm_coeff_3d {
     }
 }
 
-impl E_herm_coeff_1d {
+impl EHermCoeff1d {
     fn new(alpha1: f64, alpha2: f64, one_over_alph_p: f64, vec_BA_comp: f64) -> Self {
         let mu = alpha1 * alpha2 * one_over_alph_p;
         Self {
@@ -102,7 +103,7 @@ impl E_herm_coeff_1d {
             // Bases cases; 0th order deriv and 1st order deriv
             (0, 0, 0, 0) => (-self.mu * self.vec_BA_comp * self.vec_BA_comp).exp(),
             (0, 0, 0, 1) => {
-                // equiv to -2.0 * mu *  R_x * E_0^00 ↑
+                // equiv to -2.0 * mu *  R_x * E_0^00 
                 -2.0 * self.mu
                     * self.vec_BA_comp
                     * (-self.mu * self.vec_BA_comp * self.vec_BA_comp).exp()
@@ -138,7 +139,7 @@ impl E_herm_coeff_1d {
     }
 }
 
-impl R_herm_aux_int {
+impl RHermAuxInt {
     // Use Boys function to calculate the Hermite auxiliary integral
     fn new(tot_ang_mom: i32, vec_CP: Array1<f64>, alph_p: f64) -> Self {
         let dist_CP = vec_CP.norm();
@@ -228,7 +229,7 @@ mod tests {
     #[test]
     fn test_E_calc_recurr_rel() {
         let test_vec_AB = Array1::from_vec(vec![1.0, 2.0, 3.0]);
-        let mut E_ab = E_herm_coeff_3d::new(0.5, 0.5, ArrayView1::from(&test_vec_AB));
+        let E_ab = EHermCoeff3d::new(0.5, 0.5, ArrayView1::from(&test_vec_AB));
 
         let l1 = 2;
         let l2 = 1;
@@ -250,7 +251,7 @@ mod tests {
         let alpha2 = 10.3;
         let test_vec_AB = Array1::from_vec(vec![0.1, 0.2, 0.3]);
 
-        let mut E_ab = E_herm_coeff_3d::new(alpha1, alpha2, ArrayView1::from(&test_vec_AB));
+        let E_ab = EHermCoeff3d::new(alpha1, alpha2, ArrayView1::from(&test_vec_AB));
 
         let result = E_ab.calc_recurr_rel(l1, l2, no_nodes, deriv_deg);
         println!("result: {}", result);
@@ -267,7 +268,7 @@ mod tests {
         let alpha2 = 10.3;
         let test_vec_AB = Array1::from_vec(vec![0.1, 0.2, 0.3]);
 
-        let mut E_ab = E_herm_coeff_3d::new(alpha1, alpha2, ArrayView1::from(&test_vec_AB));
+        let E_ab = EHermCoeff3d::new(alpha1, alpha2, ArrayView1::from(&test_vec_AB));
 
         let result = E_ab.calc_recurr_rel(l1, l2, no_nodes, deriv_deg);
         println!("result: {}", result);
@@ -286,7 +287,7 @@ mod tests {
 
         let test_vec_CP = Array1::from_vec(vec![0.1, 0.2, 0.3]);
 
-        let R_tuv = R_herm_aux_int::new(boys_order, test_vec_CP, p);
+        let R_tuv = RHermAuxInt::new(boys_order, test_vec_CP, p);
 
         let result = R_tuv.calc_recurr_rel(t, u, v, boys_order);
         println!("result: {}", result);
@@ -305,7 +306,7 @@ mod tests {
 
         let test_vec_CP = Array1::from_vec(vec![0.1, 0.2, 0.3]);
 
-        let R_tuv = R_herm_aux_int::new(boys_order, test_vec_CP, p);
+        let R_tuv = RHermAuxInt::new(boys_order, test_vec_CP, p);
 
         let result = R_tuv.calc_recurr_rel(t, u, v, boys_order);
         println!("result: {}", result);
@@ -324,7 +325,7 @@ mod tests {
 
         let test_vec_CP = Array1::from_vec(vec![0.1, 0.2, 0.3]);
 
-        let R_tuv = R_herm_aux_int::new(boys_order, test_vec_CP, p);
+        let R_tuv = RHermAuxInt::new(boys_order, test_vec_CP, p);
 
         let result = R_tuv.calc_recurr_rel(t, u, v, boys_order);
         println!("result: {}", result);

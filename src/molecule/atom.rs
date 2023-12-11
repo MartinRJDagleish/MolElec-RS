@@ -69,7 +69,7 @@ impl<'a> Sub for &'a Atom {
 }
 
 impl Atom {
-    pub fn new(x_inp: f64, y_inp: f64, z_inp: f64, z_val: u32, pse_sym: PseElemSym) -> Self {
+    pub(crate) fn new(x_inp: f64, y_inp: f64, z_inp: f64, z_val: u32, pse_sym: PseElemSym) -> Self {
         let mass = ATOMIC_MASSES_IN_AMU[z_val as usize];
         Self {
             x: x_inp,
@@ -85,7 +85,7 @@ impl Atom {
         PSE_ELEM_SYMS_STR[z_val].to_string()
     }
     
-    pub fn get_pse_sym(&self) -> &PseElemSym {
+    pub(crate) fn get_pse_sym(&self) -> &PseElemSym {
         &self.pse_sym
     }
 }

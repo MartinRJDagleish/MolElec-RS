@@ -14,10 +14,9 @@ pub(crate) const CC_Y: usize = Cartesian::Y as usize;
 pub(crate) const CC_Z: usize = Cartesian::Z as usize;
 
 mod tests {
-    use super::*;
-
     #[test]
     fn test_cartesian() {
+        use super::*;
         let cart = Cartesian::iter().collect::<Vec<_>>();
         assert_eq!(cart, vec![Cartesian::X, Cartesian::Y, Cartesian::Z]);
     }

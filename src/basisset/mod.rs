@@ -1,8 +1,10 @@
 mod parser;
 
+use std::f64::consts::PI;
+
 use crate::molecule::{atom::Atom, Molecule};
-use ndarray::Array1;
-use parser::{BasisSetDefAtom, BasisSetDefTotal};
+use parser::BasisSetDefAtom;
+
 
 /// # Basis set
 /// ## Arguments
@@ -30,6 +32,7 @@ struct Shell<'a> {
     center_pos: &'a Atom,
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug)]
 struct CGTO<'a> {
     pgto_vec: Vec<PGTO>,
@@ -38,6 +41,7 @@ struct CGTO<'a> {
     center_pos: &'a Atom,
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug)]
 struct PGTO {
     alpha: f64,
@@ -51,8 +55,6 @@ impl<'a> BasisSet<'a> {
         // Potential speedup: Preallocate vector with correct size
         let mut shells: Vec<Shell<'_>> = Vec::<Shell>::new();
         for atom in mol.atoms_iter() {
-            // TODO: Potential redesign necessarry: BasisSetDefAtom contains vectors of different lengths
-            // -> better grouping reasonable?
             let basis_set_def_at = basis_set_def_total
                 .get_basis_set_def_atom(atom.get_pse_sym())
                 .unwrap();
@@ -76,35 +78,25 @@ impl<'a> BasisSet<'a> {
 
 impl<'a> Shell<'a> {
     fn new(atom: &'a Atom, shell_idx: usize, basis_set_def_at: &BasisSetDefAtom) -> Self {
-        let nprim_p_shell = basis_set_def_at.get_n_prim_p_shell(shell_idx);
-        let mut curr_exp_coeff_idx = basis_set_def_at
-            .no_prim_per_shell_iter()
-            .take(shell_idx)
-            .sum::<usize>();
-        if curr_exp_coeff_idx > 0 {
-            curr_exp_coeff_idx -= 1;
-        }
-
-        let ang_mom_triples = basis_set_def_at
-            .get_ang_mom_chars(shell_idx)
-            .get_ang_mom_triple();
+        let curr_shell_def = &basis_set_def_at.shell_defs[shell_idx];
+        let no_prim = curr_shell_def.get_no_prim();
+        let ang_mom_triples = curr_shell_def.get_ang_mom_char().get_ang_mom_triple();
 
         let no_cgtos = ang_mom_triples.len();
         let mut cgtos = Vec::<CGTO>::with_capacity(no_cgtos);
 
+        let alphas = curr_shell_def.get_pgtos_exps();
+        let coeffs = curr_shell_def.get_pgto_coeffs();
+
         for ang_mom_trip in ang_mom_triples {
-            // let cgto = CGTO::new();
-            let mut pgtos = Vec::<PGTO>::with_capacity(nprim_p_shell);
-            for pgto_idx in (curr_exp_coeff_idx..curr_exp_coeff_idx + nprim_p_shell) {
-                let pgto = PGTO::new(
-                    basis_set_def_at.pgto_exps[pgto_idx],
-                    basis_set_def_at.pgto_coeffs[pgto_idx],
-                );
+            let mut pgtos = Vec::<PGTO>::with_capacity(no_prim);
+            for pgto_idx in 0..no_prim {
+                let pgto = PGTO::new(alphas[pgto_idx], coeffs[pgto_idx], &ang_mom_trip);
                 pgtos.push(pgto);
             }
             let cgto = CGTO {
                 pgto_vec: pgtos,
-                no_pgtos: nprim_p_shell,
+                no_pgtos: no_prim,
                 ang_mom_vec: ang_mom_trip,
                 center_pos: atom,
             };
@@ -112,16 +104,21 @@ impl<'a> Shell<'a> {
             cgtos.push(cgto);
         }
 
+        // Calc norm const for CGTOs
+        for cgto in cgtos.iter_mut() {
+            cgto.calc_cart_norm_const_cgto();
+        }
+
         Self {
             is_pure_am: false,
-            cgtos: Vec::<CGTO>::new(),
+            cgtos,
             center_pos: atom,
         }
     }
 }
 
 impl<'a> CGTO<'a> {
-    pub fn new(pgto_vec: Vec<PGTO>, ang_mom_vec: [i32; 3], center_pos: &'a Atom) -> Self {
+    pub fn new(mut pgto_vec: Vec<PGTO>, ang_mom_vec: [i32; 3], center_pos: &'a Atom) -> Self {
         Self {
             no_pgtos: pgto_vec.len(),
             pgto_vec,
@@ -129,16 +126,72 @@ impl<'a> CGTO<'a> {
             center_pos,
         }
     }
+
+    /// Calculate the normalization constant for a given primitive Gaussian type orbital (CGTO)
+    /// add it to the norm_const field of the PGTOs
+    ///
+    /// Source: Valeev -- Fundamentals of Molecular Integrals Evaluation
+    /// Link: https://arxiv.org/pdf/2007.12057.pdf
+    /// Eq. 2.25 on page 10
+    fn calc_cart_norm_const_cgto(&mut self) {
+        let mut norm_const_cgto = 0.0_f64;
+
+        let L_sum = self.ang_mom_vec.iter().sum::<i32>();
+        let pi_factor = PI.powf(1.5) / (2.0_f64.powi(L_sum))
+            * (self.ang_mom_vec.map(|x| double_fac(2 * x - 1)))
+                .iter()
+                .product::<i32>() as f64;
+
+        for pgto1 in &self.pgto_vec {
+            for pgto2 in &self.pgto_vec {
+                norm_const_cgto +=
+                    pgto1.pgto_coeff * pgto2.pgto_coeff * pgto1.norm_const * pgto2.norm_const
+                        / (pgto1.alpha + pgto2.alpha).powf(L_sum as f64 + 1.5);
+            }
+        }
+
+        norm_const_cgto *= pi_factor;
+        norm_const_cgto = norm_const_cgto.powf(-0.5);
+
+        for pgto in self.pgto_vec.iter_mut() {
+            pgto.norm_const *= norm_const_cgto;
+        }
+    }
 }
 
 impl PGTO {
-    fn new(alpha: f64, pgto_coeff: f64) -> Self {
-        let norm_const = 1.0; // TODO: implement norm_const
+    pub fn new(alpha: f64, pgto_coeff: f64, ang_mom_vec: &[i32; 3]) -> Self {
         Self {
             alpha,
             pgto_coeff,
-            norm_const,
+            norm_const: Self::calc_norm_const(alpha, ang_mom_vec),
         }
+    }
+
+    /// Calculate the normalization constant for a given primitive Gaussian type orbital (PGTO)
+    ///
+    /// Source: Valeev -- Fundamentals of Molecular Integrals Evaluation
+    /// Link: https://arxiv.org/pdf/2007.12057.pdf
+    /// Using formula (2.11) on page 8
+    pub fn calc_norm_const(alpha: f64, ang_mom_vec: &[i32; 3]) -> f64 {
+        let l_sum = ang_mom_vec.iter().sum::<i32>();
+        let numerator: f64 = (2.0 * alpha / PI).powf(1.5) * (4.0 * alpha).powi(l_sum);
+        let denom: i32 = ang_mom_vec
+            .map(|x| double_fac(2 * x - 1))
+            .iter()
+            .product::<i32>();
+
+        (numerator / denom as f64).sqrt()
+    }
+}
+
+#[inline(always)]
+fn double_fac(n: i32) -> i32 {
+    match n {
+        -1 => 1,
+        0 => 1,
+        1 => 1,
+        _ => n * double_fac(n - 2),
     }
 }
 
@@ -150,7 +203,7 @@ mod tests {
     fn create_basis_set() {
         println!("Test create_basis_set");
         let mol = Molecule::new("data/xyz/water90.xyz", 0);
-        let test_basis = BasisSet::new("STO-3G", &mol); 
+        let test_basis = BasisSet::new("STO-3G", &mol);
         println!("{:?}", test_basis);
     }
 }

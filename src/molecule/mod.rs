@@ -384,15 +384,8 @@ impl Molecule {
 
 #[cfg(test)]
 mod tests {
-    // use approx::assert_abs_diff_eq;
-    // use approx::relative_eq;
-    // use ndarray::array;
+    use approx::{assert_abs_diff_eq, assert_relative_eq};
     use ndarray::prelude::*;
-    // use ndarray::approx
-    use approx::{
-        assert_abs_diff_eq, assert_abs_diff_ne, assert_relative_eq, assert_relative_ne,
-        assert_ulps_eq, assert_ulps_ne,
-    };
 
     use super::*;
     const WATER_90_FPATH: &str = "data/xyz/water90.xyz";

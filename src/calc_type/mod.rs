@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use ndarray::Array2;
 
 mod rhf;

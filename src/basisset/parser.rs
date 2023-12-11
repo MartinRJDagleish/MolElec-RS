@@ -52,10 +52,17 @@ pub struct BasisSetDefTotal {
 #[derive(Debug, Default, Clone)]
 pub struct BasisSetDefAtom {
     // elem_sym: PseElemSym, // no need to store elem_sym redundantly
-    pub pgto_exps: Vec<f64>,
-    pub pgto_coeffs: Vec<f64>,
     pub ang_mom_chars: Vec<AngMomChar>,
     pub no_prim_per_shell: Vec<usize>,
+    pub shell_defs: Vec<BasisSetDefShell>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct BasisSetDefShell {
+    ang_mom_char: AngMomChar,
+    no_prim: usize,
+    pgto_exps: Vec<f64>,
+    pgto_coeffs: Vec<f64>,
 }
 
 impl BasisSetDefAtom {
@@ -70,9 +77,41 @@ impl BasisSetDefAtom {
     pub(crate) fn no_prim_per_shell_iter(&self) -> std::slice::Iter<usize> {
         self.no_prim_per_shell.iter()
     }
+}
 
-    pub(crate) fn get_ang_mom_chars(&self, idx: usize) -> &AngMomChar {
-        &self.ang_mom_chars[idx]
+impl BasisSetDefShell {
+    fn split_sp_shell(shell: &Self) -> (Self, Self) {
+        let mut shell_s = Self::default();
+        let mut shell_p = Self::default();
+        shell_s.ang_mom_char = AngMomChar::S;
+        shell_p.ang_mom_char = AngMomChar::P;
+        shell_s.no_prim = shell.no_prim;
+        shell_p.no_prim = shell.no_prim;
+        shell_s.pgto_exps = shell.pgto_exps.clone();
+        shell_p.pgto_exps = shell.pgto_exps.clone();
+
+        for idx in 0..shell.pgto_coeffs.len() / 2 {
+            // even for s
+            shell_s.pgto_coeffs.push(shell.pgto_coeffs[2 * idx]);
+            // odd for p
+            shell_p.pgto_coeffs.push(shell.pgto_coeffs[2 * idx + 1]);
+        }
+
+        (shell_s, shell_p)
+    }
+
+    pub fn get_pgtos_exps(&self) -> &[f64] {
+        &self.pgto_exps
+    }
+
+    pub fn get_pgto_coeffs(&self) -> &[f64] {
+        &self.pgto_coeffs
+    }
+    pub fn get_no_prim(&self) -> usize {
+        self.no_prim
+    }
+    pub fn get_ang_mom_char(&self) -> &AngMomChar {
+        &self.ang_mom_char
     }
 }
 
@@ -114,6 +153,7 @@ impl BasisSetDefTotal {
         let reader = BufReader::new(basis_set_file);
 
         let mut basis_set_def_atom: BasisSetDefAtom = BasisSetDefAtom::default();
+        let mut basis_set_def_shell: BasisSetDefShell = BasisSetDefShell::default();
         let mut elem_sym = PseElemSym::default();
 
         for line in reader.lines().skip(1) {
@@ -126,12 +166,23 @@ impl BasisSetDefTotal {
             //2. Check if the line starts with the block delimiter
             else if data_line.starts_with(block_delimiter) {
                 // Check if previous basis_set_def_atom is done
-                if !basis_set_def_atom.pgto_coeffs.is_empty() {
+                if !basis_set_def_shell.pgto_coeffs.is_empty() {
+                    if let AngMomChar::SP = basis_set_def_shell.ang_mom_char {
+                        let (s_shell, p_shell) =
+                            BasisSetDefShell::split_sp_shell(&basis_set_def_shell);
+                        basis_set_def_atom.shell_defs.push(s_shell);
+                        basis_set_def_atom.shell_defs.push(p_shell);
+                    } else {
+                        basis_set_def_atom
+                            .shell_defs
+                            .push(basis_set_def_shell.clone());
+                    }
                     // Add the basis using the element symbol as key
                     basis_set_defs.insert(elem_sym, basis_set_def_atom);
                     // Create new basis_set_def_atom
                     basis_set_def_atom = BasisSetDefAtom::default();
-                } 
+                    basis_set_def_shell = BasisSetDefShell::default();
+                }
             } else if data_line.chars().next().unwrap().is_alphabetic() {
                 //3. Check if the line starts with an PseElemSymb or AngMomChar
                 let line_split: Vec<&str> = data_line.split_whitespace().collect();
@@ -143,25 +194,47 @@ impl BasisSetDefTotal {
                     };
                     continue;
                 } else {
+                    // Save the previous shell
+                    if !basis_set_def_shell.pgto_coeffs.is_empty() {
+                        if let AngMomChar::SP = basis_set_def_shell.ang_mom_char {
+                            let (s_shell, p_shell) =
+                                BasisSetDefShell::split_sp_shell(&basis_set_def_shell);
+                            basis_set_def_atom.shell_defs.push(s_shell);
+                            basis_set_def_atom.shell_defs.push(p_shell);
+                            basis_set_def_shell = BasisSetDefShell::default();
+                        } else {
+                            basis_set_def_atom.shell_defs.push(basis_set_def_shell);
+                            basis_set_def_shell = BasisSetDefShell::default();
+                        }
+                    }
                     let ang_mom_char = AngMomChar::from_str(line_split[0])?;
                     let no_prim: usize = line_split[1].parse::<usize>()?;
-                    basis_set_def_atom.ang_mom_chars.push(ang_mom_char);
-                    basis_set_def_atom.no_prim_per_shell.push(no_prim);
+                    basis_set_def_shell.ang_mom_char = ang_mom_char.clone();
+                    basis_set_def_shell.no_prim = no_prim;
+                    if let AngMomChar::SP = ang_mom_char {
+                        basis_set_def_atom.ang_mom_chars.push(AngMomChar::S);
+                        basis_set_def_atom.ang_mom_chars.push(AngMomChar::P);
+                        basis_set_def_atom.no_prim_per_shell.push(no_prim);
+                        basis_set_def_atom.no_prim_per_shell.push(no_prim);
+                    } else {
+                        basis_set_def_atom.ang_mom_chars.push(ang_mom_char);
+                        basis_set_def_atom.no_prim_per_shell.push(no_prim);
+                    }
                 }
             } else {
                 let parameters_vec = data_line
-                    .replace("D", "e")
+                    .replace('D', "e")
                     .split_whitespace()
                     .map(|x| x.parse::<f64>().unwrap())
                     .collect::<Vec<f64>>();
                 if parameters_vec.len() > 2 {
                     //* This is the SP basis case
-                    basis_set_def_atom.pgto_exps.push(parameters_vec[0]);
-                    basis_set_def_atom.pgto_coeffs.push(parameters_vec[1]); //* Values at even positions (0,2,…) are coeffs for S, odd values are for P (1,3,…) */
-                    basis_set_def_atom.pgto_coeffs.push(parameters_vec[2]);
+                    basis_set_def_shell.pgto_exps.push(parameters_vec[0]);
+                    basis_set_def_shell.pgto_coeffs.push(parameters_vec[1]); //* Values at even positions (0,2,…) are coeffs for S, odd values are for P (1,3,…) */
+                    basis_set_def_shell.pgto_coeffs.push(parameters_vec[2]);
                 } else {
-                    basis_set_def_atom.pgto_exps.push(parameters_vec[0]);
-                    basis_set_def_atom.pgto_coeffs.push(parameters_vec[1]);
+                    basis_set_def_shell.pgto_exps.push(parameters_vec[0]);
+                    basis_set_def_shell.pgto_coeffs.push(parameters_vec[1]);
                 }
             }
         }
@@ -198,12 +271,14 @@ mod tests {
     fn test_parser3() {
         let basis_set_name = "sto-3g";
         let basis_set_defs = BasisSetDefTotal::new(basis_set_name);
+        // println!("\n{:?}\n", basis_set_defs);
         let basis_set_def_at = basis_set_defs
             .basis_set_defs_hm
             .get(&PseElemSym::O)
             .unwrap();
         println!("{:?}", basis_set_def_at);
-        // println!("{:?}", basis_set_defs);
+        assert!(basis_set_def_at.ang_mom_chars.len() == 3);
+        assert!(basis_set_def_at.no_prim_per_shell.len() == 3);
     }
 
     #[test]
