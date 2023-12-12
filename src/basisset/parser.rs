@@ -66,7 +66,7 @@ pub struct BasisSetDefShell {
 }
 
 impl BasisSetDefAtom {
-    pub(crate) fn get_n_prim_p_shell(&self, shell_idx: usize) -> usize {
+    pub(crate) fn no_prim_p_shell(&self, shell_idx: usize) -> usize {
         self.no_prim_per_shell[shell_idx]
     }
 
@@ -100,17 +100,17 @@ impl BasisSetDefShell {
         (shell_s, shell_p)
     }
 
-    pub fn get_pgtos_exps(&self) -> &[f64] {
+    pub fn pgto_exps(&self) -> &[f64] {
         &self.pgto_exps
     }
 
-    pub fn get_pgto_coeffs(&self) -> &[f64] {
+    pub fn pgto_coeffs(&self) -> &[f64] {
         &self.pgto_coeffs
     }
-    pub fn get_no_prim(&self) -> usize {
+    pub fn no_prim(&self) -> usize {
         self.no_prim
     }
-    pub fn get_ang_mom_char(&self) -> &AngMomChar {
+    pub fn ang_mom_char(&self) -> &AngMomChar {
         &self.ang_mom_char
     }
 }
@@ -242,7 +242,7 @@ impl BasisSetDefTotal {
         Ok(basis_set_defs)
     }
 
-    pub fn get_basis_set_def_atom(&self, elem_sym: &PseElemSym) -> Option<&BasisSetDefAtom> {
+    pub fn basis_set_def_atom(&self, elem_sym: &PseElemSym) -> Option<&BasisSetDefAtom> {
         self.basis_set_defs_hm.get(elem_sym)
     }
 }
