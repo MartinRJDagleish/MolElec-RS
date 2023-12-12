@@ -66,6 +66,24 @@ pub struct PGTO {
     norm_const: f64,
 }
 
+impl PGTO {
+    #[inline(always)]
+    pub(crate) fn alpha(&self) -> f64 {
+        self.alpha
+    }
+
+    #[inline(always)]
+    pub(crate) fn pgto_coeff(&self) -> f64 {
+        self.pgto_coeff
+    }
+
+    #[inline(always)]
+    pub(crate) fn norm_const(&self) -> f64 {
+        self.norm_const
+    }
+
+}
+
 impl<'a> BasisSet<'a> {
     pub fn new(basisset_name: &str, mol: &'a Molecule) -> Self {
         let basis_set_def_total = parser::BasisSetDefTotal::new(basisset_name);
@@ -73,7 +91,7 @@ impl<'a> BasisSet<'a> {
         let mut shells: Vec<Shell<'_>> = Vec::<Shell>::new();
         for atom in mol.atoms_iter() {
             let basis_set_def_at = basis_set_def_total
-                .get_basis_set_def_atom(atom.get_pse_sym())
+                .basis_set_def_atom(atom.pse_sym())
                 .unwrap();
             let no_shells = basis_set_def_at.get_no_shells();
             for shell_idx in 0..no_shells {
@@ -100,14 +118,14 @@ impl<'a> BasisSet<'a> {
 impl<'a> Shell<'a> {
     fn new(atom: &'a Atom, shell_idx: usize, basis_set_def_at: &BasisSetDefAtom) -> Self {
         let curr_shell_def = &basis_set_def_at.shell_defs[shell_idx];
-        let no_prim = curr_shell_def.get_no_prim();
-        let ang_mom_triples = curr_shell_def.get_ang_mom_char().get_ang_mom_triple();
+        let no_prim = curr_shell_def.no_prim();
+        let ang_mom_triples = curr_shell_def.ang_mom_char().get_ang_mom_triple();
 
         let no_cgtos = ang_mom_triples.len();
         let mut cgtos = Vec::<CGTO>::with_capacity(no_cgtos);
 
-        let alphas = curr_shell_def.get_pgtos_exps();
-        let coeffs = curr_shell_def.get_pgto_coeffs();
+        let alphas = curr_shell_def.pgto_exps();
+        let coeffs = curr_shell_def.pgto_coeffs();
 
         for ang_mom_trip in ang_mom_triples {
             let mut pgtos = Vec::<PGTO>::with_capacity(no_prim);
@@ -185,6 +203,14 @@ impl<'a> CGTO<'a> {
     
     pub fn pgto_iter(&self) -> std::slice::Iter<PGTO> {
         self.pgto_vec.iter()
+    }
+    
+    pub fn centre_pos(&self) -> &'a Atom{
+        &self.center_pos
+    }
+    
+    pub fn ang_mom_vec(&self) -> &[i32; 3] {
+        &self.ang_mom_vec
     }
 }
 
