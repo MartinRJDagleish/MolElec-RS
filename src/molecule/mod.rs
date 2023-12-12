@@ -180,6 +180,7 @@ pub struct Molecule {
 #[derive(Debug, Default)]
 struct Geometry {
     coords_matr: Array2<f64>,
+    //TODO: add symmetry here?
 }
 
 impl Geometry {
@@ -201,7 +202,7 @@ impl Molecule {
 
         Self {
             tot_charge,
-            tot_mass: atoms.iter().map(|at| at.get_mass()).sum::<f64>(),
+            tot_mass: atoms.iter().map(|at| at.mass()).sum::<f64>(),
             atoms,
             geom: Geometry::new(geom_matr),
             z_vals,
@@ -209,19 +210,6 @@ impl Molecule {
             no_atoms,
         }
     }
-
-    /// DEPRECATED: original version
-    // fn create_atoms_from_input(atoms: &mut Vec<Atom>, z_vals: &[u32], geom_matr: &Array2<f64>) {
-    //     for (at_idx, z_val) in z_vals.iter().enumerate() {
-    //         let atom = Atom::new(
-    //             geom_matr[(at_idx, CC_X)],
-    //             geom_matr[(at_idx, CC_Y)],
-    //             geom_matr[(at_idx, CC_Z)],
-    //             *z_val,
-    //         );
-    //         atoms.push(atom);
-    //     }
-    // }
 
     fn read_xyz_xmol_inputfile(geom_filename: &str) -> GeometryResult {
         println!("Inputfile: {geom_filename}");
@@ -304,9 +292,9 @@ impl Molecule {
             if other_atom == deriv_atom {
                 continue;
             }
-            let r_ij_norm = deriv_atom - other_atom;
-            let z_i = deriv_atom.get_z_val() as f64;
-            let z_j = other_atom.get_z_val() as f64;
+            let r_ij_norm = deriv_atom.calc_norm_dist_vec(other_atom);
+            let z_i = deriv_atom.z_val() as f64;
+            let z_j = other_atom.z_val() as f64;
             core_potential_der +=
                 z_i * z_j * (deriv_atom[cc_idx] - other_atom[cc_idx]) / r_ij_norm.powi(3);
         }
@@ -317,7 +305,7 @@ impl Molecule {
     fn calc_centre_of_mass(&self) {
         let mut COM = Array1::<f64>::zeros(3);
         for atom in self.atoms.iter() {
-            let at_mass = atom.get_mass();
+            let at_mass = atom.mass();
             COM[CC_X] += at_mass * atom[CC_X]; // x
             COM[CC_Y] += at_mass * atom[CC_Y]; // y
             COM[CC_Z] += at_mass * atom[CC_Z]; // z
@@ -340,7 +328,7 @@ impl Molecule {
         for i in [CC_X, CC_Y, CC_Z] {
             let (k, l) = Self::other_two_idx(i);
             for atom in self.atoms.iter() {
-                let at_mass = atom.get_mass();
+                let at_mass = atom.mass();
                 inertia_matr[(i, i)] += at_mass * (atom[k].powi(2) + atom[l].powi(2));
                 for j in (i + 1)..=CC_Z {
                     inertia_matr[(i, j)] -= at_mass * atom[i] * atom[j];

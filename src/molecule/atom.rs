@@ -26,13 +26,30 @@ pub struct Atom {
 
 impl Atom {
     #[inline(always)]
-    pub(crate) fn get_z_val(&self) -> u32 {
+    pub(crate) fn z_val(&self) -> u32 {
         self.z_val
     }
     
     #[inline(always)]
-    pub(crate) fn get_mass(&self) -> f64 {
+    pub(crate) fn mass(&self) -> f64 {
         self.mass
+    }
+    
+    #[inline]
+    pub fn calc_vec_to_atom(&self, other: &Atom) -> [f64; 3] {
+        [
+            self.x - other.x,
+            self.y - other.y,
+            self.z - other.z,
+        ]
+    }
+    
+    #[inline]
+    pub fn calc_norm_dist_vec(&self, other: &Atom) -> f64 {
+        let dx = self.x - other.x;
+        let dy = self.y - other.y;
+        let dz = self.z - other.z;
+        (dx * dx + dy * dy + dz * dz).sqrt()
     }
 }
 
@@ -60,26 +77,26 @@ impl IndexMut<usize> for Atom {
     }
 }
 
-impl Sub for Atom {
-    type Output = f64;
-    fn sub(self, other: Self) -> Self::Output {
-        let dx = self.x - other.x;
-        let dy = self.y - other.y;
-        let dz = self.z - other.z;
-        (dx * dx + dy * dy + dz * dz).sqrt()
-    }
-}
-
-impl<'a> Sub for &'a Atom {
-    type Output = f64;
-
-    fn sub(self, other: Self) -> Self::Output {
-        let dx = self.x - other.x;
-        let dy = self.y - other.y;
-        let dz = self.z - other.z;
-        (dx * dx + dy * dy + dz * dz).sqrt()
-    }
-}
+// impl Sub for Atom {
+//     type Output = f64;
+//     fn sub(self, other: Self) -> Self::Output {
+//         let dx = self.x - other.x;
+//         let dy = self.y - other.y;
+//         let dz = self.z - other.z;
+//         (dx * dx + dy * dy + dz * dz).sqrt()
+//     }
+// }
+//
+// impl<'a> Sub for &'a Atom {
+//     type Output = f64;
+//
+//     fn sub(self, other: Self) -> Self::Output {
+//         let dx = self.x - other.x;
+//         let dy = self.y - other.y;
+//         let dz = self.z - other.z;
+//         (dx * dx + dy * dy + dz * dz).sqrt()
+//     }
+// }
 
 impl Atom {
     pub(crate) fn new(x_inp: f64, y_inp: f64, z_inp: f64, z_val: u32, pse_sym: PseElemSym) -> Self {
@@ -98,7 +115,7 @@ impl Atom {
         PSE_ELEM_SYMS_STR[z_val].to_string()
     }
     
-    pub(crate) fn get_pse_sym(&self) -> &PseElemSym {
+    pub(crate) fn pse_sym(&self) -> &PseElemSym {
         &self.pse_sym
     }
 }
