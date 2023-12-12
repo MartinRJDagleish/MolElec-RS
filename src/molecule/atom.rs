@@ -19,10 +19,23 @@ pub struct Atom {
     x: f64,
     y: f64,
     z: f64,
-    pub z_val: u32,
-    pub mass: f64,
+    z_val: u32,
+    mass: f64,
     pse_sym: PseElemSym,
 }
+
+impl Atom {
+    #[inline(always)]
+    pub(crate) fn get_z_val(&self) -> u32 {
+        self.z_val
+    }
+    
+    #[inline(always)]
+    pub(crate) fn get_mass(&self) -> f64 {
+        self.mass
+    }
+}
+
 
 impl Index<usize> for Atom {
     type Output = f64; // necessary for Index trait

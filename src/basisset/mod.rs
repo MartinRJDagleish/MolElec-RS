@@ -6,6 +6,23 @@ use crate::molecule::{atom::Atom, Molecule};
 use parser::BasisSetDefAtom;
 
 
+#[allow(non_camel_case_types)]
+#[derive(Debug)]
+enum BasisSetVariants {
+    STO_3G, 
+    STO_6G,
+    _6_31G,
+    _6_311G,
+    cc_pVDZ,
+    cc_pVTZ,
+    def2_SVP,
+    def2_TZVP,
+    _6_311_plus_plus_G,
+    _6_311_plus_plus_G_star,
+    _6_311_plus_G_star,
+    _6_311G_d_p
+}
+
 /// # Basis set
 /// ## Arguments
 /// - `name` - name of the basis set
@@ -26,7 +43,7 @@ pub(crate) struct BasisSet<'a> {
 }
 
 #[derive(Debug)]
-struct Shell<'a> {
+pub struct Shell<'a> {
     is_pure_am: bool,
     cgtos: Vec<CGTO<'a>>, // == basis funcs.
     center_pos: &'a Atom,
@@ -34,7 +51,7 @@ struct Shell<'a> {
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug)]
-struct CGTO<'a> {
+pub struct CGTO<'a> {
     pgto_vec: Vec<PGTO>,
     no_pgtos: usize,
     ang_mom_vec: [i32; 3],
@@ -43,7 +60,7 @@ struct CGTO<'a> {
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug)]
-struct PGTO {
+pub struct PGTO {
     alpha: f64,
     pgto_coeff: f64,
     norm_const: f64,
@@ -73,6 +90,10 @@ impl<'a> BasisSet<'a> {
             shells,
             use_pure_am: false, // hard code for now
         }
+    }
+
+    pub fn shell_iter(&self) -> std::slice::Iter<Shell<'a>> {
+        self.shells.iter()
     }
 }
 
@@ -115,6 +136,10 @@ impl<'a> Shell<'a> {
             center_pos: atom,
         }
     }
+    
+    pub fn cgto_iter(&self) -> std::slice::Iter<CGTO<'a>> {
+        self.cgtos.iter()
+    }
 }
 
 impl<'a> CGTO<'a> {
@@ -156,6 +181,10 @@ impl<'a> CGTO<'a> {
         for pgto in self.pgto_vec.iter_mut() {
             pgto.norm_const *= norm_const_cgto;
         }
+    }
+    
+    pub fn pgto_iter(&self) -> std::slice::Iter<PGTO> {
+        self.pgto_vec.iter()
     }
 }
 

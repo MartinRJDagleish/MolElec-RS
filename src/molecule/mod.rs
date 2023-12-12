@@ -201,7 +201,7 @@ impl Molecule {
 
         Self {
             tot_charge,
-            tot_mass: atoms.iter().map(|at| at.mass).sum::<f64>(),
+            tot_mass: atoms.iter().map(|at| at.get_mass()).sum::<f64>(),
             atoms,
             geom: Geometry::new(geom_matr),
             z_vals,
@@ -305,8 +305,8 @@ impl Molecule {
                 continue;
             }
             let r_ij_norm = deriv_atom - other_atom;
-            let z_i = deriv_atom.z_val as f64;
-            let z_j = other_atom.z_val as f64;
+            let z_i = deriv_atom.get_z_val() as f64;
+            let z_j = other_atom.get_z_val() as f64;
             core_potential_der +=
                 z_i * z_j * (deriv_atom[cc_idx] - other_atom[cc_idx]) / r_ij_norm.powi(3);
         }
@@ -317,9 +317,10 @@ impl Molecule {
     fn calc_centre_of_mass(&self) {
         let mut COM = Array1::<f64>::zeros(3);
         for atom in self.atoms.iter() {
-            COM[CC_X] += atom.mass * atom[CC_X]; // x
-            COM[CC_Y] += atom.mass * atom[CC_Y]; // y
-            COM[CC_Z] += atom.mass * atom[CC_Z]; // z
+            let at_mass = atom.get_mass();
+            COM[CC_X] += at_mass * atom[CC_X]; // x
+            COM[CC_Y] += at_mass * atom[CC_Y]; // y
+            COM[CC_Z] += at_mass * atom[CC_Z]; // z
         }
         COM /= self.tot_mass;
     }
@@ -339,9 +340,10 @@ impl Molecule {
         for i in [CC_X, CC_Y, CC_Z] {
             let (k, l) = Self::other_two_idx(i);
             for atom in self.atoms.iter() {
-                inertia_matr[(i, i)] += atom.mass * (atom[k].powi(2) + atom[l].powi(2));
+                let at_mass = atom.get_mass();
+                inertia_matr[(i, i)] += at_mass * (atom[k].powi(2) + atom[l].powi(2));
                 for j in (i + 1)..=CC_Z {
-                    inertia_matr[(i, j)] -= atom.mass * atom[i] * atom[j];
+                    inertia_matr[(i, j)] -= at_mass * atom[i] * atom[j];
                     inertia_matr[(j, i)] = inertia_matr[(i, j)];
                 }
             }

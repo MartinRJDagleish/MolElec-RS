@@ -50,7 +50,7 @@ impl EHermCoeff3d {
     /// - `alpha1` : Exponent of the first Gaussian function.
     /// - `alpha2` : Exponent of the second Gaussian function.
     /// - `vec_BA` : Vector from B to A, i.e. A - B (not B - A) => BA_x = A_x - B_x
-    fn new(alpha1: f64, alpha2: f64, vec_BA: ArrayView1<f64>) -> Self {
+    pub fn new(alpha1: f64, alpha2: f64, vec_BA: ArrayView1<f64>) -> Self {
         let one_over_alph_p = 1.0 / (alpha1 + alpha2);
         let E_ij = EHermCoeff1d::new(alpha1, alpha2, one_over_alph_p, vec_BA[CC_X]);
         let E_kl = EHermCoeff1d::new(alpha1, alpha2, one_over_alph_p, vec_BA[CC_Y]);

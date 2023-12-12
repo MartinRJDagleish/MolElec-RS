@@ -11,6 +11,7 @@ mod print_utils;
 mod calc_type;
 
 use crate::print_utils::print_prog_header;
+use basisset::BasisSet;
 use molecule::Molecule;
 
 fn main() {
@@ -24,12 +25,16 @@ fn main() {
 
     exec_times.start("Molecule");
     let _mol = Molecule::new("data/xyz/water90.xyz", 0);
-    // println!("Molecule: {:?}", mol);
+    println!("Molecule: {:?}", _mol);
     exec_times.stop("Molecule");
 
     exec_times.start("BasisSet");
-    // let mut basisset = basisset::BasisSet::new("data/basisset/sto-3g.json");
-    
+    let basis = BasisSet::new("STO-3G", &_mol);
+    // println!("Molecule: {:?}", _basis);
+    println!("\n\n");
+    for shell in basis.shell_iter() {
+        println!("Shell: {:?}\n", shell);
+    }
     exec_times.stop("BasisSet");
 
     //##################################
