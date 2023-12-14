@@ -77,10 +77,30 @@ impl EHermCoeff3D {
             .calc_recurr_rel(l1[CC_Z], l2[CC_Z], no_nodes, deriv_deg);
         E_ij_val * E_kl_val * E_mn_val // return product of all three components
     }
+    
+    pub(crate) fn calc_recurr_rel_ret_indv_parts(
+        &self,
+        l1: &[i32; 3],
+        l2: &[i32; 3],
+        no_nodes: i32,
+        deriv_deg: i32,
+    ) -> (f64, f64, f64) {
+        let E_ij_val = self
+            .E_ij
+            .calc_recurr_rel(l1[CC_X], l2[CC_X], no_nodes, deriv_deg);
+        let E_kl_val = self
+            .E_kl
+            .calc_recurr_rel(l1[CC_Y], l2[CC_Y], no_nodes, deriv_deg);
+        let E_mn_val = self
+            .E_mn
+            .calc_recurr_rel(l1[CC_Z], l2[CC_Z], no_nodes, deriv_deg);
+        (E_ij_val, E_kl_val, E_mn_val) // return components
+    }
+    
 }
 
 impl EHermCoeff1D {
-    fn new(alpha1: f64, alpha2: f64, one_over_alph_p: f64, vec_BA_comp: f64) -> Self {
+    pub fn new(alpha1: f64, alpha2: f64, one_over_alph_p: f64, vec_BA_comp: f64) -> Self {
         let mu = alpha1 * alpha2 * one_over_alph_p;
         Self {
             alpha1,
@@ -89,6 +109,13 @@ impl EHermCoeff1D {
             vec_BA_comp,
             mu,
         }
+    }
+
+    pub(crate) fn calc_recurr_rel_for_kin(&self, l1: i32, l2: i32) -> (f64, f64, f64) {
+        let E_ij_pl_2 = self.calc_recurr_rel(l1, l2 + 2, 0, 0);
+        let E_ij = self.calc_recurr_rel(l1, l2, 0, 0);
+        let E_ij_min_2 = self.calc_recurr_rel(l1, l2 - 2, 0, 0);
+        (E_ij_pl_2, E_ij, E_ij_min_2) // return individual components
     }
 
     /// Calculate the Hermite expansion coefficient E_ij^t for a cartesian direction
