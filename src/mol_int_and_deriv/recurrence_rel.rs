@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 use crate::molecule::cartesian_comp::{CC_X, CC_Y, CC_Z};
 use boys::micb25::boys;
-use ndarray::{Array1, ArrayView1};
+use ndarray::Array1;
 use ndarray_linalg::Norm;
 
 #[derive(Debug, Default)]

@@ -1,5 +1,5 @@
 use crate::molecule::{PseElemSym, PSE_ELEM_SYMS_STR};
-use std::ops::{Index, IndexMut, Sub};
+use std::ops::{Index, IndexMut};
 
 #[rustfmt::skip]
 const ATOMIC_MASSES_IN_AMU: [f64; 118] = [

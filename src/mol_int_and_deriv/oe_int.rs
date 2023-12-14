@@ -1,11 +1,7 @@
-use std::f32::consts::E;
 use std::f64::consts::PI;
 
 use crate::mol_int_and_deriv::recurrence_rel::EHermCoeff3D;
-use crate::{
-    basisset::{Shell, CGTO, PGTO},
-    molecule::cartesian_comp::{CC_X, CC_Y, CC_Z},
-};
+use crate::basisset::CGTO;
 
 ///////////////////////////////////////
 /// 1. Create function for invididual parts first
@@ -22,7 +18,8 @@ use crate::{
 //     overlap_int
 // }
 
-fn calc_overlap_int_cgto(cgto1: &CGTO, cgto2: &CGTO) -> f64 {
+#[allow(non_snake_case)]
+pub fn calc_overlap_int_cgto(cgto1: &CGTO, cgto2: &CGTO) -> f64 {
     lazy_static! {
         pub static ref PI_FAC: f64 = PI.powf(1.5);
     }

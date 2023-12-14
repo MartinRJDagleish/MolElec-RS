@@ -1,15 +1,14 @@
 mod parser;
 
-use std::f64::consts::PI;
-
 use crate::molecule::{atom::Atom, Molecule};
+use getset::{CopyGetters, Getters};
 use parser::BasisSetDefAtom;
-
+use std::f64::consts::PI;
 
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
 enum BasisSetVariants {
-    STO_3G, 
+    STO_3G,
     STO_6G,
     _6_31G,
     _6_311G,
@@ -20,7 +19,7 @@ enum BasisSetVariants {
     _6_311_plus_plus_G,
     _6_311_plus_plus_G_star,
     _6_311_plus_G_star,
-    _6_311G_d_p
+    _6_311G_d_p,
 }
 
 /// # Basis set
@@ -33,11 +32,13 @@ enum BasisSetVariants {
 ///
 /// ## Notes
 /// - `no_bf` = `no_ao` * 2 if UHF; `no_bf` = `no_ao` if RHF
-#[derive(Debug)]
+#[derive(Debug,CopyGetters)]
 pub(crate) struct BasisSet<'a> {
     name: String,
     use_pure_am: bool,
+    #[getset(get_copy = "pub")]
     no_ao: usize,
+    #[getset(get_copy = "pub")]
     no_bf: usize,
     shells: Vec<Shell<'a>>,
 }
@@ -46,42 +47,28 @@ pub(crate) struct BasisSet<'a> {
 pub struct Shell<'a> {
     is_pure_am: bool,
     cgtos: Vec<CGTO<'a>>, // == basis funcs.
+    shell_len: usize,
     center_pos: &'a Atom,
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug)]
+#[derive(Debug, Getters)]
 pub struct CGTO<'a> {
     pgto_vec: Vec<PGTO>,
     no_pgtos: usize,
+    #[getset(get = "pub")]
     ang_mom_vec: [i32; 3],
-    center_pos: &'a Atom,
+    #[getset(get = "pub")]
+    centre_pos: &'a Atom,
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, CopyGetters)]
+#[getset(get_copy = "pub")]
 pub struct PGTO {
     alpha: f64,
     pgto_coeff: f64,
     norm_const: f64,
-}
-
-impl PGTO {
-    #[inline(always)]
-    pub(crate) fn alpha(&self) -> f64 {
-        self.alpha
-    }
-
-    #[inline(always)]
-    pub(crate) fn pgto_coeff(&self) -> f64 {
-        self.pgto_coeff
-    }
-
-    #[inline(always)]
-    pub(crate) fn norm_const(&self) -> f64 {
-        self.norm_const
-    }
-
 }
 
 impl<'a> BasisSet<'a> {
@@ -137,7 +124,7 @@ impl<'a> Shell<'a> {
                 pgto_vec: pgtos,
                 no_pgtos: no_prim,
                 ang_mom_vec: ang_mom_trip,
-                center_pos: atom,
+                centre_pos: atom,
             };
 
             cgtos.push(cgto);
@@ -151,22 +138,23 @@ impl<'a> Shell<'a> {
         Self {
             is_pure_am: false,
             cgtos,
+            shell_len: no_cgtos,
             center_pos: atom,
         }
     }
-    
+
     pub fn cgto_iter(&self) -> std::slice::Iter<CGTO<'a>> {
         self.cgtos.iter()
     }
 }
 
 impl<'a> CGTO<'a> {
-    pub fn new(mut pgto_vec: Vec<PGTO>, ang_mom_vec: [i32; 3], center_pos: &'a Atom) -> Self {
+    pub fn new(pgto_vec: Vec<PGTO>, ang_mom_vec: [i32; 3], center_pos: &'a Atom) -> Self {
         Self {
             no_pgtos: pgto_vec.len(),
             pgto_vec,
             ang_mom_vec,
-            center_pos,
+            centre_pos: center_pos,
         }
     }
 
@@ -200,17 +188,9 @@ impl<'a> CGTO<'a> {
             pgto.norm_const *= norm_const_cgto;
         }
     }
-    
+
     pub fn pgto_iter(&self) -> std::slice::Iter<PGTO> {
         self.pgto_vec.iter()
-    }
-    
-    pub fn centre_pos(&self) -> &'a Atom{
-        &self.center_pos
-    }
-    
-    pub fn ang_mom_vec(&self) -> &[i32; 3] {
-        &self.ang_mom_vec
     }
 }
 
@@ -225,9 +205,9 @@ impl PGTO {
 
     /// Calculate the normalization constant for a given primitive Gaussian type orbital (PGTO)
     ///
-    /// Source: Valeev -- Fundamentals of Molecular Integrals Evaluation
-    /// Link: https://arxiv.org/pdf/2007.12057.pdf
-    /// Using formula (2.11) on page 8
+    /// - Source: Valeev -- Fundamentals of Molecular Integrals Evaluation
+    /// - Link: https://arxiv.org/pdf/2007.12057.pdf
+    /// - Using formula (2.11) on page 8
     pub fn calc_norm_const(alpha: f64, ang_mom_vec: &[i32; 3]) -> f64 {
         let l_sum = ang_mom_vec.iter().sum::<i32>();
         let numerator: f64 = (2.0 * alpha / PI).powf(1.5) * (4.0 * alpha).powi(l_sum);

@@ -1,3 +1,3 @@
-mod recurrence_rel;
-mod oe_int;
-mod te_int;
+pub(crate) mod recurrence_rel;
+pub(crate) mod oe_int;
+pub(crate) mod te_int;
