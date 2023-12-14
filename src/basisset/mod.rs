@@ -32,7 +32,7 @@ enum BasisSetVariants {
 ///
 /// ## Notes
 /// - `no_bf` = `no_ao` * 2 if UHF; `no_bf` = `no_ao` if RHF
-#[derive(Debug,CopyGetters)]
+#[derive(Debug, CopyGetters)]
 pub(crate) struct BasisSet<'a> {
     name: String,
     use_pure_am: bool,
@@ -43,10 +43,11 @@ pub(crate) struct BasisSet<'a> {
     shells: Vec<Shell<'a>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, CopyGetters)]
 pub struct Shell<'a> {
     is_pure_am: bool,
     cgtos: Vec<CGTO<'a>>, // == basis funcs.
+    #[getset(get_copy = "pub")]
     shell_len: usize,
     center_pos: &'a Atom,
 }
@@ -76,6 +77,7 @@ impl<'a> BasisSet<'a> {
         let basis_set_def_total = parser::BasisSetDefTotal::new(basisset_name);
         // Potential speedup: Preallocate vector with correct size
         let mut shells: Vec<Shell<'_>> = Vec::<Shell>::new();
+        let mut no_bf = 0;
         for atom in mol.atoms_iter() {
             let basis_set_def_at = basis_set_def_total
                 .basis_set_def_atom(atom.pse_sym())
@@ -83,6 +85,7 @@ impl<'a> BasisSet<'a> {
             let no_shells = basis_set_def_at.get_no_shells();
             for shell_idx in 0..no_shells {
                 let shell = Shell::new(atom, shell_idx, basis_set_def_at);
+                no_bf += shell.shell_len;
                 shells.push(shell);
             }
         }
@@ -90,8 +93,8 @@ impl<'a> BasisSet<'a> {
         // TODO: change for UHF
         Self {
             name: basisset_name.to_string(),
-            no_ao: shells.len(),
-            no_bf: shells.len(),
+            no_ao: no_bf,
+            no_bf,
             shells,
             use_pure_am: false, // hard code for now
         }
@@ -99,6 +102,14 @@ impl<'a> BasisSet<'a> {
 
     pub fn shell_iter(&self) -> std::slice::Iter<Shell<'a>> {
         self.shells.iter()
+    }
+    
+    pub fn shell(&self, idx: usize) -> &Shell<'a> {
+        &self.shells[idx]
+    }
+    
+    pub fn no_shells(&self) -> usize {
+        self.shells.len()
     }
 }
 
