@@ -179,7 +179,7 @@ impl EHermCoeff1D {
 }
 
 impl RHermAuxInt {
-    // Use Boys function to calculate the Hermite auxiliary integral
+    /// Use Boys function to calculate the Hermite auxiliary integral
     fn new(tot_ang_mom: i32, vec_CP: Array1<f64>, alph_p: f64) -> Self {
         let dist_CP = vec_CP.norm();
         let boys_inp = alph_p * dist_CP * dist_CP;

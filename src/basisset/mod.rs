@@ -103,11 +103,11 @@ impl<'a> BasisSet<'a> {
     pub fn shell_iter(&self) -> std::slice::Iter<Shell<'a>> {
         self.shells.iter()
     }
-    
+
     pub fn shell(&self, idx: usize) -> &Shell<'a> {
         &self.shells[idx]
     }
-    
+
     pub fn no_shells(&self) -> usize {
         self.shells.len()
     }
@@ -172,9 +172,10 @@ impl<'a> CGTO<'a> {
     /// Calculate the normalization constant for a given primitive Gaussian type orbital (CGTO)
     /// add it to the norm_const field of the PGTOs
     ///
-    /// Source: Valeev -- Fundamentals of Molecular Integrals Evaluation
-    /// Link: https://arxiv.org/pdf/2007.12057.pdf
-    /// Eq. 2.25 on page 10
+    /// - Source: Valeev -- Fundamentals of Molecular Integrals Evaluation
+    /// - Link: https://arxiv.org/pdf/2007.12057.pdf
+    /// - Eq. 2.25 on page 10
+    #[allow(non_snake_case)]
     fn calc_cart_norm_const_cgto(&mut self) {
         let mut norm_const_cgto = 0.0_f64;
 

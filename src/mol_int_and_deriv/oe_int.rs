@@ -7,7 +7,7 @@ use crate::molecule::cartesian_comp::{CC_X, CC_Y, CC_Z};
 use super::recurrence_rel::EHermCoeff1D;
 
 lazy_static! {
-    pub static ref PI_FAC_overl: f64 = PI.powf(1.5);
+    pub static ref PI_FAC_OVERL: f64 = PI.powf(1.5);
 }
 
 ///////////////////////////////////////
@@ -26,7 +26,7 @@ pub fn calc_overlap_int_cgto(cgto1: &CGTO, cgto2: &CGTO) -> f64 {
     for pgto1 in cgto1.pgto_iter() {
         for pgto2 in cgto2.pgto_iter() {
             let E_ab = EHermCoeff3D::new(pgto1.alpha(), pgto2.alpha(), &vec_BA);
-            let E_to_S_fac = *PI_FAC_overl * (1.0 / (pgto1.alpha() + pgto2.alpha()).powf(1.5));
+            let E_to_S_fac = *PI_FAC_OVERL * (1.0 / (pgto1.alpha() + pgto2.alpha()).powf(1.5));
             overlap_int += pgto1.norm_const()
                 * pgto2.norm_const()
                 * pgto1.pgto_coeff()
@@ -90,7 +90,7 @@ pub fn calc_kinetic_int_cgto(cgto1: &CGTO, cgto2: &CGTO) -> f64 {
                 * pgto2.norm_const()
                 * pgto1.pgto_coeff()
                 * pgto2.pgto_coeff()
-                * *PI_FAC_overl
+                * *PI_FAC_OVERL
                 * (1.0 / (pgto1.alpha() + pgto2.alpha()).powf(1.5))
                 * (T_x * E_kl * E_mn + E_ij * T_y * E_mn + E_ij * E_kl * T_z);
         }
