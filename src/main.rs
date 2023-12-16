@@ -30,6 +30,7 @@ fn main() {
 
     exec_times.start("BasisSet");
     let _basis = BasisSet::new("STO-3G", &_mol);
+    println!("BasisSet: {:?}", _basis);
     // println!("Molecule: {:?}", _basis);
     // println!("\n\n");
     // for shell in basis.shell_iter() {

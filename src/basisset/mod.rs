@@ -1,5 +1,6 @@
-mod parser;
+pub mod parser;
 
+use self::parser::AngMomChar;
 use crate::molecule::{atom::Atom, Molecule};
 use getset::{CopyGetters, Getters};
 use parser::BasisSetDefAtom;
@@ -32,7 +33,7 @@ enum BasisSetVariants {
 ///
 /// ## Notes
 /// - `no_bf` = `no_ao` * 2 if UHF; `no_bf` = `no_ao` if RHF
-#[derive(Debug, CopyGetters)]
+#[derive(Debug, CopyGetters, Getters)]
 pub(crate) struct BasisSet<'a> {
     name: String,
     use_pure_am: bool,
@@ -41,6 +42,8 @@ pub(crate) struct BasisSet<'a> {
     #[getset(get_copy = "pub")]
     no_bf: usize,
     shells: Vec<Shell<'a>>,
+    #[getset(get = "pub")]
+    shell_lens: Vec<usize>,
 }
 
 #[derive(Debug, CopyGetters)]
@@ -53,10 +56,12 @@ pub struct Shell<'a> {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, Getters)]
+#[derive(Debug, Getters, Clone)]
 pub struct CGTO<'a> {
     pgto_vec: Vec<PGTO>,
     no_pgtos: usize,
+    #[getset(get = "pub")]
+    ang_mom_type: AngMomChar,
     #[getset(get = "pub")]
     ang_mom_vec: [i32; 3],
     #[getset(get = "pub")]
@@ -77,6 +82,7 @@ impl<'a> BasisSet<'a> {
         let basis_set_def_total = parser::BasisSetDefTotal::new(basisset_name);
         // Potential speedup: Preallocate vector with correct size
         let mut shells: Vec<Shell<'_>> = Vec::<Shell>::new();
+        let mut shell_lens: Vec<usize> = Vec::<usize>::new();
         let mut no_bf = 0;
         for atom in mol.atoms_iter() {
             let basis_set_def_at = basis_set_def_total
@@ -86,16 +92,18 @@ impl<'a> BasisSet<'a> {
             for shell_idx in 0..no_shells {
                 let shell = Shell::new(atom, shell_idx, basis_set_def_at);
                 no_bf += shell.shell_len;
+                shell_lens.push(shell.shell_len);
                 shells.push(shell);
             }
         }
 
-        // TODO: change for UHF
+        // [ ] TODO: change for UHF
         Self {
             name: basisset_name.to_string(),
             no_ao: no_bf,
             no_bf,
             shells,
+            shell_lens,
             use_pure_am: false, // hard code for now
         }
     }
@@ -134,6 +142,7 @@ impl<'a> Shell<'a> {
             let cgto = CGTO {
                 pgto_vec: pgtos,
                 no_pgtos: no_prim,
+                ang_mom_type: curr_shell_def.ang_mom_char(),
                 ang_mom_vec: ang_mom_trip,
                 centre_pos: atom,
             };
@@ -160,12 +169,19 @@ impl<'a> Shell<'a> {
 }
 
 impl<'a> CGTO<'a> {
-    pub fn new(pgto_vec: Vec<PGTO>, ang_mom_vec: [i32; 3], center_pos: &'a Atom) -> Self {
+    pub fn new(
+        pgto_vec: Vec<PGTO>,
+        no_pgtos: usize,
+        ang_mom_type: AngMomChar,
+        ang_mom_vec: [i32; 3],
+        centre_pos: &'a Atom,
+    ) -> Self {
         Self {
-            no_pgtos: pgto_vec.len(),
             pgto_vec,
+            no_pgtos,
+            ang_mom_type,
             ang_mom_vec,
-            centre_pos: center_pos,
+            centre_pos,
         }
     }
 
@@ -204,6 +220,7 @@ impl<'a> CGTO<'a> {
     pub fn pgto_iter(&self) -> std::slice::Iter<PGTO> {
         self.pgto_vec.iter()
     }
+
 }
 
 impl PGTO {

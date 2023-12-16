@@ -1,11 +1,11 @@
 use crate::molecule::PseElemSym;
+use getset::{CopyGetters, Getters};
 use std::{collections::HashMap, fs::File, io::BufRead, io::BufReader, str::FromStr};
 use strum_macros::EnumString;
 
-// #[derive(PartialEq)]
-#[derive(Debug, Default, EnumString, Clone)]
+#[derive(Debug, Default, EnumString, Clone, Copy)]
 #[repr(i32)]
-pub enum AngMomChar {
+pub(crate) enum AngMomChar {
     #[default]
     S = 0,
     P = 1,
@@ -22,7 +22,7 @@ impl AngMomChar {
     pub fn get_ang_mom_triple(&self) -> Vec<[i32; 3]> {
         let max = match self {
             AngMomChar::SP => 1,
-            _ => self.clone() as i32,
+            _ => *self as i32,
         };
         let mut result = Vec::with_capacity(2 * max as usize + 1);
         if let AngMomChar::SP = self {
@@ -57,11 +57,15 @@ pub struct BasisSetDefAtom {
     pub shell_defs: Vec<BasisSetDefShell>,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Getters, CopyGetters)]
 pub struct BasisSetDefShell {
+    #[getset(get_copy = "pub")]
     ang_mom_char: AngMomChar,
+    #[getset(get_copy = "pub")]
     no_prim: usize,
+    #[getset(get = "pub")]
     pgto_exps: Vec<f64>,
+    #[getset(get = "pub")]
     pgto_coeffs: Vec<f64>,
 }
 
@@ -100,19 +104,19 @@ impl BasisSetDefShell {
         (shell_s, shell_p)
     }
 
-    pub fn pgto_exps(&self) -> &[f64] {
-        &self.pgto_exps
-    }
-
-    pub fn pgto_coeffs(&self) -> &[f64] {
-        &self.pgto_coeffs
-    }
-    pub fn no_prim(&self) -> usize {
-        self.no_prim
-    }
-    pub fn ang_mom_char(&self) -> &AngMomChar {
-        &self.ang_mom_char
-    }
+    // pub fn pgto_exps(&self) -> &[f64] {
+    //     &self.pgto_exps
+    // }
+    //
+    // pub fn pgto_coeffs(&self) -> &[f64] {
+    //     &self.pgto_coeffs
+    // }
+    // pub fn no_prim(&self) -> usize {
+    //     self.no_prim
+    // }
+    // pub fn ang_mom_char(&self) -> &AngMomChar {
+    //     &self.ang_mom_char
+    // }
 }
 
 impl BasisSetDefTotal {

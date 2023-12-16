@@ -9,7 +9,7 @@ struct SCF {
     E_tot: f64,
     E_scf: f64,
     C_matr_final: Array2<f64>,
-    P_matr_final: Array2<f64>, //TODO: pot. change this to sparse matrix
+    P_matr_final: Array2<f64>, // [ ] TODO: pot. change this to sparse matrix
     orb_energies_final: Vec<f64>,     
     diis: DIIS,
 }

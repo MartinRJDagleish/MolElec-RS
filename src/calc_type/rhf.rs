@@ -20,9 +20,9 @@ pub fn calc_1e_int_matrs(basis: &BasisSet) -> (Array2<f64>, Array2<f64>) {
                 let mu_idx = mu_sh_offset + cgto_idx1;
                 for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
                     let nu_idx = nu_sh_offset + cgto_idx2;
-                    T_matr[(mu_idx, nu_idx)] = calc_kinetic_int_cgto(cgto1, cgto2);
                     if mu_idx == nu_idx {
                         S_matr[(mu_idx, nu_idx)] = 1.0;
+                        T_matr[(mu_idx, nu_idx)] = calc_kinetic_int_cgto(cgto1, cgto2);
                         continue;
                     } else {
                         S_matr[(mu_idx, nu_idx)] = calc_overlap_int_cgto(cgto1, cgto2);
@@ -78,7 +78,7 @@ mod tests {
         let mol = Molecule::new("data/xyz/water90.xyz", 0);
         let basis = BasisSet::new("STO-3G", &mol);
 
-        let (S_matr, T_matr)  = calc_1e_int_matrs(&basis);
+        let (S_matr, T_matr) = calc_1e_int_matrs(&basis);
         println!("{}", S_matr);
         println!("{}", T_matr);
     }
