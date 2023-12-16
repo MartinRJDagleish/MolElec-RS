@@ -4,14 +4,16 @@ use boys::micb25::boys;
 use ndarray::Array1;
 use ndarray_linalg::Norm;
 
+
 #[derive(Debug, Default)]
+// #[getset(get = "pub")]
 pub(crate) struct EHermCoeff3D {
     // Coefficients for the Hermite expansion of Cartesian Gaussian functions
     // Generalized to work for normal ints AND derivatives
     // See: Molecular Electronic-Structure Theory, Helgaker, Jorgensen, Olsen, 2000,
-    E_ij: EHermCoeff1D, // x comp
-    E_kl: EHermCoeff1D, // y comp
-    E_mn: EHermCoeff1D, // z comp
+    pub E_ij: EHermCoeff1D, // x comp
+    pub E_kl: EHermCoeff1D, // y comp
+    pub E_mn: EHermCoeff1D, // z comp
 }
 
 #[derive(Debug, Default)]
@@ -31,7 +33,6 @@ pub(crate) struct RHermAuxInt {
     // See: Molecular Electronic-Structure Theory, Helgaker, Jorgensen, Olsen, 2000,
     boys_values: Vec<f64>,
     vec_CP: Array1<f64>, // Vector from C to P (P - C)
-    // dist_CP: f64,        // Distance between C and P
     alph_p: f64,
 }
 
@@ -61,39 +62,39 @@ impl EHermCoeff3D {
 
     pub(crate) fn calc_recurr_rel(
         &self,
-        l1: &[i32; 3],
-        l2: &[i32; 3],
+        ang_mom_vec1: &[i32; 3],
+        ang_mom_vec2: &[i32; 3],
         no_nodes: i32,
         deriv_deg: i32,
     ) -> f64 {
         let E_ij_val = self
             .E_ij
-            .calc_recurr_rel(l1[CC_X], l2[CC_X], no_nodes, deriv_deg);
+            .calc_recurr_rel(ang_mom_vec1[CC_X], ang_mom_vec2[CC_X], no_nodes, deriv_deg);
         let E_kl_val = self
             .E_kl
-            .calc_recurr_rel(l1[CC_Y], l2[CC_Y], no_nodes, deriv_deg);
+            .calc_recurr_rel(ang_mom_vec1[CC_Y], ang_mom_vec2[CC_Y], no_nodes, deriv_deg);
         let E_mn_val = self
             .E_mn
-            .calc_recurr_rel(l1[CC_Z], l2[CC_Z], no_nodes, deriv_deg);
+            .calc_recurr_rel(ang_mom_vec1[CC_Z], ang_mom_vec2[CC_Z], no_nodes, deriv_deg);
         E_ij_val * E_kl_val * E_mn_val // return product of all three components
     }
     
     pub(crate) fn calc_recurr_rel_ret_indv_parts(
         &self,
-        l1: &[i32; 3],
-        l2: &[i32; 3],
+        ang_mom_vec1: &[i32; 3],
+        ang_mom_vec2: &[i32; 3],
         no_nodes: i32,
         deriv_deg: i32,
     ) -> (f64, f64, f64) {
         let E_ij_val = self
             .E_ij
-            .calc_recurr_rel(l1[CC_X], l2[CC_X], no_nodes, deriv_deg);
+            .calc_recurr_rel(ang_mom_vec1[CC_X], ang_mom_vec2[CC_X], no_nodes, deriv_deg);
         let E_kl_val = self
             .E_kl
-            .calc_recurr_rel(l1[CC_Y], l2[CC_Y], no_nodes, deriv_deg);
+            .calc_recurr_rel(ang_mom_vec1[CC_Y], ang_mom_vec2[CC_Y], no_nodes, deriv_deg);
         let E_mn_val = self
             .E_mn
-            .calc_recurr_rel(l1[CC_Z], l2[CC_Z], no_nodes, deriv_deg);
+            .calc_recurr_rel(ang_mom_vec1[CC_Z], ang_mom_vec2[CC_Z], no_nodes, deriv_deg);
         (E_ij_val, E_kl_val, E_mn_val) // return components
     }
     
@@ -178,9 +179,33 @@ impl EHermCoeff1D {
     }
 }
 
+/// Implementation of the RHermAuxInt struct, which represents the Hermite auxiliary integral.
+///
+/// The RHermAuxInt struct calculates the Hermite auxiliary integral using the Boys function.
+/// It provides methods for initializing the struct and calculating the recurrence relation.
+///
+/// # Example
+///
+/// ```
+/// use ndarray::Array1;
+///
+/// let vec_CP = Array1::from_vec(vec![1.0, 2.0, 3.0]);
+/// let alph_p = 0.5;
+/// let tot_ang_mom = 2;
+///
+/// let herm_aux_int = RHermAuxInt::new(tot_ang_mom, vec_CP, alph_p);
+///
+/// let t = 1;
+/// let u = 2;
+/// let v = 3;
+/// let boys_order = 4;
+///
+/// let result = herm_aux_int.calc_recurr_rel(t, u, v, boys_order);
+/// println!("Result: {}", result);
+/// ```
 impl RHermAuxInt {
     /// Use Boys function to calculate the Hermite auxiliary integral
-    fn new(tot_ang_mom: i32, vec_CP: Array1<f64>, alph_p: f64) -> Self {
+    pub fn new(tot_ang_mom: i32, vec_CP: Array1<f64>, alph_p: f64) -> Self {
         let dist_CP = vec_CP.norm();
         let boys_inp = alph_p * dist_CP * dist_CP;
         // double the capacity to allow for higher ang. mom. values
@@ -221,7 +246,7 @@ impl RHermAuxInt {
         (2.0 * boys_inp * current_boys_val + (-boys_inp).exp()) / ((2 * (ang_mom - 1)) as f64 + 1.0)
     }
 
-    fn calc_recurr_rel(&self, t: i32, u: i32, v: i32, boys_order: i32) -> f64 {
+    pub fn calc_recurr_rel(&self, t: i32, u: i32, v: i32, boys_order: i32) -> f64 {
         // Early return -> error in calc
         if t < 0 || v < 0 || u < 0 {
             return 0.0;
@@ -272,12 +297,12 @@ mod tests {
         let test_vec_AB = [1.0, 2.0, 3.0];
         let E_ab = EHermCoeff3D::new(0.5, 0.5, &test_vec_AB);
 
-        let l1 = [2, 0, 0];
-        let l2 = [1, 0, 0];
+        let ang_mom_vec1 = [2, 0, 0];
+        let ang_mom_vec2 = [1, 0, 0];
         let no_nodes = 0;
         let deriv_deg = 0;
 
-        let result = E_ab.calc_recurr_rel(&l1, &l2, no_nodes, deriv_deg);
+        let result = E_ab.calc_recurr_rel(&ang_mom_vec1, &ang_mom_vec2, no_nodes, deriv_deg);
         println!("result: {}", result);
         // assert_abs_diff_eq!(result, -0.0049542582177241, epsilon = 1e-10);
     }
@@ -286,8 +311,8 @@ mod tests {
     fn test_E_calc_recurr_rel_deriv_test1() {
         // let l1 = 2;
         // let l2 = 1;
-        let l1 = [2, 0, 0];
-        let l2 = [1, 0, 0];
+        let ang_mom_vec1 = [2, 0, 0];
+        let ang_mom_vec2 = [1, 0, 0];
         let no_nodes = 1;
         let deriv_deg = 2;
         let alpha1 = 15.5;
@@ -298,7 +323,7 @@ mod tests {
 
         let E_ab = EHermCoeff3D::new(alpha1, alpha2, &test_vec_AB);
 
-        let result = E_ab.calc_recurr_rel(&l1, &l2, no_nodes, deriv_deg);
+        let result = E_ab.calc_recurr_rel(&ang_mom_vec1, &ang_mom_vec2, no_nodes, deriv_deg);
         println!("result: {}", result);
         // assert_abs_diff_eq!(result, 0.0000021278111580, epsilon = 1e-10); // reference from TCF
     }
@@ -307,8 +332,8 @@ mod tests {
     fn test_E_calc_recurr_rel_deriv_test2() {
         // let l1 = 2;
         // let l2 = 1;
-        let l1 = [2, 0, 0];
-        let l2 = [1, 0, 0];
+        let ang_mom_vec1 = [2, 0, 0];
+        let ang_mom_vec2 = [1, 0, 0];
         let no_nodes = 2;
         let deriv_deg = 2;
         let alpha1 = 15.5;
@@ -317,7 +342,7 @@ mod tests {
 
         let E_ab = EHermCoeff3D::new(alpha1, alpha2, &test_vec_AB);
 
-        let result = E_ab.calc_recurr_rel(&l1, &l2, no_nodes, deriv_deg);
+        let result = E_ab.calc_recurr_rel(&ang_mom_vec1, &ang_mom_vec2, no_nodes, deriv_deg);
         println!("result: {}", result);
         // assert_abs_diff_eq!(result, 0.0000000000767396, epsilon = 1e-10); // reference from TCF
     }
