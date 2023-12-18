@@ -404,8 +404,8 @@ mod tests {
 
     #[test]
     fn test_enum_string() {
-        const test_str: &str = "H";
-        let test_enum = PseElemSym::from_str(test_str);
+        const TEST_STR: &str = "H";
+        let test_enum = PseElemSym::from_str(TEST_STR);
         assert_eq!(test_enum.unwrap(), PseElemSym::H);
     }
 

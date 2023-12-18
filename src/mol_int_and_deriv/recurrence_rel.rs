@@ -4,7 +4,6 @@ use boys::micb25::boys;
 use ndarray::Array1;
 use ndarray_linalg::Norm;
 
-
 #[derive(Debug, Default)]
 // #[getset(get = "pub")]
 pub(crate) struct EHermCoeff3D {
@@ -67,18 +66,18 @@ impl EHermCoeff3D {
         no_nodes: i32,
         deriv_deg: i32,
     ) -> f64 {
-        let E_ij_val = self
-            .E_ij
-            .calc_recurr_rel(ang_mom_vec1[CC_X], ang_mom_vec2[CC_X], no_nodes, deriv_deg);
-        let E_kl_val = self
-            .E_kl
-            .calc_recurr_rel(ang_mom_vec1[CC_Y], ang_mom_vec2[CC_Y], no_nodes, deriv_deg);
-        let E_mn_val = self
-            .E_mn
-            .calc_recurr_rel(ang_mom_vec1[CC_Z], ang_mom_vec2[CC_Z], no_nodes, deriv_deg);
+        let E_ij_val =
+            self.E_ij
+                .calc_recurr_rel(ang_mom_vec1[CC_X], ang_mom_vec2[CC_X], no_nodes, deriv_deg);
+        let E_kl_val =
+            self.E_kl
+                .calc_recurr_rel(ang_mom_vec1[CC_Y], ang_mom_vec2[CC_Y], no_nodes, deriv_deg);
+        let E_mn_val =
+            self.E_mn
+                .calc_recurr_rel(ang_mom_vec1[CC_Z], ang_mom_vec2[CC_Z], no_nodes, deriv_deg);
         E_ij_val * E_kl_val * E_mn_val // return product of all three components
     }
-    
+
     pub(crate) fn calc_recurr_rel_ret_indv_parts(
         &self,
         ang_mom_vec1: &[i32; 3],
@@ -86,15 +85,15 @@ impl EHermCoeff3D {
         no_nodes: i32,
         deriv_deg: i32,
     ) -> (f64, f64, f64) {
-        let E_ij_val = self
-            .E_ij
-            .calc_recurr_rel(ang_mom_vec1[CC_X], ang_mom_vec2[CC_X], no_nodes, deriv_deg);
-        let E_kl_val = self
-            .E_kl
-            .calc_recurr_rel(ang_mom_vec1[CC_Y], ang_mom_vec2[CC_Y], no_nodes, deriv_deg);
-        let E_mn_val = self
-            .E_mn
-            .calc_recurr_rel(ang_mom_vec1[CC_Z], ang_mom_vec2[CC_Z], no_nodes, deriv_deg);
+        let E_ij_val =
+            self.E_ij
+                .calc_recurr_rel(ang_mom_vec1[CC_X], ang_mom_vec2[CC_X], no_nodes, deriv_deg);
+        let E_kl_val =
+            self.E_kl
+                .calc_recurr_rel(ang_mom_vec1[CC_Y], ang_mom_vec2[CC_Y], no_nodes, deriv_deg);
+        let E_mn_val =
+            self.E_mn
+                .calc_recurr_rel(ang_mom_vec1[CC_Z], ang_mom_vec2[CC_Z], no_nodes, deriv_deg);
         (E_ij_val, E_kl_val, E_mn_val) // return components
     }
     
@@ -291,29 +290,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_E_calc_recurr_rel() {
-        // let test_vec_AB = Array1::from_vec(vec![1.0, 2.0, 3.0]);
-        // let E_ab = EHermCoeff3D::new(0.5, 0.5, ArrayView1::from(&test_vec_AB));
-        let test_vec_AB = [1.0, 2.0, 3.0];
-        let E_ab = EHermCoeff3D::new(0.5, 0.5, &test_vec_AB);
+    fn test_E_calc_recurr_rel_1() {
+        let test_vec_AB = [0.01, 0.02, 0.3];
+        let E_ab = EHermCoeff3D::new(15.5, 10.3, &test_vec_AB);
 
-        let ang_mom_vec1 = [2, 0, 0];
-        let ang_mom_vec2 = [1, 0, 0];
+        let ang_mom_vec1 = [1, 1, 1];
+        let ang_mom_vec2 = [0, 0, 0];
         let no_nodes = 0;
         let deriv_deg = 0;
 
         let result = E_ab.calc_recurr_rel(&ang_mom_vec1, &ang_mom_vec2, no_nodes, deriv_deg);
-        println!("result: {}", result);
-        // assert_abs_diff_eq!(result, -0.0049542582177241, epsilon = 1e-10);
+        println!("E_ab: {}", result);
+        const REF_VAL_1: f64 = -0.0000021806874590;
+        assert_abs_diff_eq!(result, REF_VAL_1, epsilon = 1e-10);
     }
+
+    #[test]
+    fn test_E_calc_recurr_rel_2() {
+        let test_vec_AB = [0.0, 0.0, 0.0];
+        let E_ab = EHermCoeff3D::new(130.7093214, 130.7093214, &test_vec_AB);
+
+        let ang_mom_vec1 = [0, 0, 0];
+        let ang_mom_vec2 = [0, 0, 0];
+        let no_nodes = 0;
+        let deriv_deg = 0;
+
+        let result = E_ab.calc_recurr_rel(&ang_mom_vec1, &ang_mom_vec2, no_nodes, deriv_deg);
+        println!("E_ab: {}", result);
+        // const REF_VAL_1: f64 = -0.0000021806874590;
+        assert_abs_diff_eq!(result, 1.0, epsilon = 1e-10);
+    }
+
 
     #[test]
     fn test_E_calc_recurr_rel_deriv_test1() {
         // let l1 = 2;
         // let l2 = 1;
         let ang_mom_vec1 = [2, 0, 0];
-        let ang_mom_vec2 = [1, 0, 0];
-        let no_nodes = 1;
+        let ang_mom_vec2 = [2, 0, 0];
+        let no_nodes = 0;
         let deriv_deg = 2;
         let alpha1 = 15.5;
         let alpha2 = 10.3;
@@ -324,8 +339,9 @@ mod tests {
         let E_ab = EHermCoeff3D::new(alpha1, alpha2, &test_vec_AB);
 
         let result = E_ab.calc_recurr_rel(&ang_mom_vec1, &ang_mom_vec2, no_nodes, deriv_deg);
-        println!("result: {}", result);
-        // assert_abs_diff_eq!(result, 0.0000021278111580, epsilon = 1e-10); // reference from TCF
+        println!("E_ab: {}", result);
+        const REF_DERIV_VAL_1: f64 = -2.6449304846129680;
+        assert_abs_diff_eq!(result, REF_DERIV_VAL_1, epsilon = 1e-10); // reference from TCF
     }
 
     #[test]
@@ -344,7 +360,7 @@ mod tests {
 
         let result = E_ab.calc_recurr_rel(&ang_mom_vec1, &ang_mom_vec2, no_nodes, deriv_deg);
         println!("result: {}", result);
-        // assert_abs_diff_eq!(result, 0.0000000000767396, epsilon = 1e-10); // reference from TCF
+        assert_abs_diff_eq!(result, 0.0000000000767396, epsilon = 1e-10); // reference from TCF
     }
 
     #[test]
