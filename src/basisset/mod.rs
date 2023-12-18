@@ -42,7 +42,6 @@ pub(crate) struct BasisSet<'a> {
     #[getset(get_copy = "pub")]
     no_bf: usize,
     shells: Vec<Shell<'a>>,
-    #[getset(get = "pub")]
     shell_lens: Vec<usize>,
 }
 
@@ -112,12 +111,19 @@ impl<'a> BasisSet<'a> {
         self.shells.iter()
     }
 
+    #[inline(always)]
     pub fn shell(&self, idx: usize) -> &Shell<'a> {
         &self.shells[idx]
     }
 
+    #[inline(always)]
     pub fn no_shells(&self) -> usize {
         self.shells.len()
+    }
+    
+    #[inline(always)]
+    pub fn shell_len(&self, sh_idx: usize) -> usize {
+        self.shell_lens[sh_idx]
     }
 }
 
@@ -125,7 +131,8 @@ impl<'a> Shell<'a> {
     fn new(atom: &'a Atom, shell_idx: usize, basis_set_def_at: &BasisSetDefAtom) -> Self {
         let curr_shell_def = &basis_set_def_at.shell_defs[shell_idx];
         let no_prim = curr_shell_def.no_prim();
-        let ang_mom_triples = curr_shell_def.ang_mom_char().get_ang_mom_triple();
+        let curr_ang_mom_char = curr_shell_def.ang_mom_char();
+        let ang_mom_triples = curr_ang_mom_char.get_ang_mom_triple();
 
         let no_cgtos = ang_mom_triples.len();
         let mut cgtos = Vec::<CGTO>::with_capacity(no_cgtos);
@@ -136,7 +143,12 @@ impl<'a> Shell<'a> {
         for ang_mom_trip in ang_mom_triples {
             let mut pgtos = Vec::<PGTO>::with_capacity(no_prim);
             for pgto_idx in 0..no_prim {
-                let pgto = PGTO::new(alphas[pgto_idx], coeffs[pgto_idx], &ang_mom_trip);
+                let pgto = PGTO::new(
+                    alphas[pgto_idx],
+                    coeffs[pgto_idx],
+                    &ang_mom_trip,
+                    curr_ang_mom_char as i32,
+                );
                 pgtos.push(pgto);
             }
             let cgto = CGTO {
@@ -193,10 +205,12 @@ impl<'a> CGTO<'a> {
     /// - Eq. 2.25 on page 10
     #[allow(non_snake_case)]
     fn calc_cart_norm_const_cgto(&mut self) {
+        lazy_static! {
+            static ref PI_3_2: f64 = PI.powf(1.5);
+        }
         let mut norm_const_cgto = 0.0_f64;
-
-        let L_sum = self.ang_mom_vec.iter().sum::<i32>();
-        let pi_factor = PI.powf(1.5) / (2.0_f64.powi(L_sum))
+        let L_tot = self.ang_mom_type as u32;
+        let pi_factor = *PI_3_2 / (2_i32.pow(L_tot) as f64)
             * (self.ang_mom_vec.map(|x| double_fac(2 * x - 1)))
                 .iter()
                 .product::<i32>() as f64;
@@ -205,12 +219,12 @@ impl<'a> CGTO<'a> {
             for pgto2 in &self.pgto_vec {
                 norm_const_cgto +=
                     pgto1.pgto_coeff * pgto2.pgto_coeff * pgto1.norm_const * pgto2.norm_const
-                        / (pgto1.alpha + pgto2.alpha).powf(L_sum as f64 + 1.5);
+                        / (pgto1.alpha + pgto2.alpha).powf(L_tot as f64 + 1.5);
             }
         }
 
         norm_const_cgto *= pi_factor;
-        norm_const_cgto = norm_const_cgto.powf(-0.5);
+        norm_const_cgto = 1.0 / (norm_const_cgto.sqrt());
 
         for pgto in self.pgto_vec.iter_mut() {
             pgto.norm_const *= norm_const_cgto;
@@ -220,15 +234,14 @@ impl<'a> CGTO<'a> {
     pub fn pgto_iter(&self) -> std::slice::Iter<PGTO> {
         self.pgto_vec.iter()
     }
-
 }
 
 impl PGTO {
-    pub fn new(alpha: f64, pgto_coeff: f64, ang_mom_vec: &[i32; 3]) -> Self {
+    pub fn new(alpha: f64, pgto_coeff: f64, ang_mom_vec: &[i32; 3], L_tot: i32) -> Self {
         Self {
             alpha,
             pgto_coeff,
-            norm_const: Self::calc_norm_const(alpha, ang_mom_vec),
+            norm_const: Self::calc_norm_const(alpha, ang_mom_vec, L_tot),
         }
     }
 
@@ -237,25 +250,47 @@ impl PGTO {
     /// - Source: Valeev -- Fundamentals of Molecular Integrals Evaluation
     /// - Link: https://arxiv.org/pdf/2007.12057.pdf
     /// - Using formula (2.11) on page 8
-    pub fn calc_norm_const(alpha: f64, ang_mom_vec: &[i32; 3]) -> f64 {
-        let l_sum = ang_mom_vec.iter().sum::<i32>();
-        let numerator: f64 = (2.0 * alpha / PI).powf(1.5) * (4.0 * alpha).powi(l_sum);
+    pub fn calc_norm_const(alpha: f64, ang_mom_vec: &[i32; 3], L_tot: i32) -> f64 {
+        // let numerator: f64 = (2.0 * alpha / PI).powf(1.5) * (4.0 * alpha).powi(L_tot);
+        // let denom: i32 = ang_mom_vec
+        //     .map(|x| double_fac(2 * x - 1))
+        //     .iter()
+        //     .product::<i32>();
+        //
+        // (numerator / denom as f64).sqrt()
+        // Version 2
+        lazy_static! {
+            static ref PI_INV_POW_3_2: f64 = 1.0 / (PI * PI.sqrt());
+        }
+        let numerator: f64 =
+            (2.0_f64).powf((2 * L_tot) as f64 + 3.0 / 2.0) * alpha.powf(L_tot as f64 + 3.0 / 2.0);
         let denom: i32 = ang_mom_vec
             .map(|x| double_fac(2 * x - 1))
             .iter()
             .product::<i32>();
-
-        (numerator / denom as f64).sqrt()
+        (*PI_INV_POW_3_2 * numerator / denom as f64).sqrt()
     }
 }
 
 #[inline(always)]
-fn double_fac(n: i32) -> i32 {
+fn double_fac(mut n: i32) -> i32 {
+    let mut res = 1;
     match n {
-        -1 => 1,
-        0 => 1,
-        1 => 1,
-        _ => n * double_fac(n - 2),
+        -1..=1 => 1, // (-1)!! = 0!! = 1!! = 1
+        _ => {
+            if n % 2 == 1 {
+                while n >= 2 {
+                    res *= n;
+                    n -= 2;
+                }
+            } else {
+                while n >= 1 {
+                    res *= n;
+                    n -= 2;
+                }
+            }
+            res
+        }
     }
 }
 
