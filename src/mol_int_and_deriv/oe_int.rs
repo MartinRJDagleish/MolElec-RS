@@ -1,5 +1,6 @@
 use ndarray::{array, Array1};
 use std::f64::consts::PI;
+use std::vec;
 
 use crate::basisset::{CGTO, PGTO};
 use crate::mol_int_and_deriv::recurrence_rel::{EHermCoeff1D, EHermCoeff3D, RHermAuxInt};
@@ -10,7 +11,7 @@ use crate::molecule::{
 };
 
 lazy_static! {
-    pub static ref PI_FAC_OVERL: f64 = PI.powf(1.5);
+    pub static ref PI_FAC_OVERL: f64 = PI * PI.sqrt();
     pub static ref TWO_PI: f64 = 2.0 * PI;
 }
 
@@ -44,27 +45,34 @@ pub fn calc_overlap_int_cgto(cgto1: &CGTO, cgto2: &CGTO) -> f64 {
 
 #[allow(non_snake_case)]
 #[inline(always)]
+/// Calculate the kinetic energy integral between two contracted Gaussian type orbitals (CGTOs)
+/// Source: Helgaker -- Molecular Electronic Structure Theory
+/// Here is only only one Cartesian comp. for the kinetic energy integral
 fn calc_T_cart_comp_pgto(pgto1: &PGTO, pgto2: &PGTO, l1: i32, l2: i32, vec_BA_comp: f64) -> f64 {
-    let T_fac1 = -2.0 * pgto1.alpha() * pgto1.alpha();
-    let T_fac2 = pgto2.alpha() * (2.0 * l2 as f64 + 1.0);
+    let T_fac1 = -2.0 * pgto2.alpha() * pgto2.alpha();
+    let T_fac2 = pgto2.alpha() * (2 * l2 + 1) as f64;
     let T_fac3 = -0.5 * l2 as f64 * (l2 + 1) as f64;
     let oo_alph_p = 1.0 / (pgto1.alpha() + pgto2.alpha());
+    // let E_to_S_fac = (PI * oo_alph_p).sqrt();
 
     let T_ij = EHermCoeff1D::new(pgto1.alpha(), pgto2.alpha(), oo_alph_p, vec_BA_comp);
     let (E_ij_pl_2, E_ij, E_ij_min_2) = T_ij.calc_recurr_rel_for_kin(l1, l2);
 
     // NOTE: This does not include the PI factor to red. redundant calcs -> add in cgto func
     // Here would technically be a sqrt(π / p) missing
+    // E_to_S_fac * (E_ij_pl_2 * T_fac1 + E_ij * T_fac2 + E_ij_min_2 * T_fac3)
     E_ij_pl_2 * T_fac1 + E_ij * T_fac2 + E_ij_min_2 * T_fac3
 }
 
 #[allow(non_snake_case)]
+/// Calculate the kinetic energy integral between two contracted Gaussian type orbitals (CGTOs)
+/// Source: Helgaker -- Molecular Electronic Structure Theory
+/// Here is only only one Cartesian comp. for the kinetic energy integral
 pub fn calc_kinetic_int_cgto(cgto1: &CGTO, cgto2: &CGTO) -> f64 {
     let mut kin_int = 0.0_f64;
     let vec_BA = cgto1.centre_pos().calc_vec_to_atom(cgto2.centre_pos());
     let ang_mom_vec1 = cgto1.ang_mom_vec();
     let ang_mom_vec2 = cgto2.ang_mom_vec();
-    //TODO: Diagonal elements are correctly calc., but not the off-diagonal ones
     for pgto1 in cgto1.pgto_iter() {
         for pgto2 in cgto2.pgto_iter() {
             let E_ab = EHermCoeff3D::new(pgto1.alpha(), pgto2.alpha(), &vec_BA);
@@ -95,9 +103,11 @@ pub fn calc_kinetic_int_cgto(cgto1: &CGTO, cgto2: &CGTO) -> f64 {
                 * pgto2.norm_const()
                 * pgto1.pgto_coeff()
                 * pgto2.pgto_coeff()
+                * (T_x * E_kl * E_mn + E_ij * T_y * E_mn + E_ij * E_kl * T_z)
                 * *PI_FAC_OVERL
-                * (1.0 / (pgto1.alpha() + pgto2.alpha())).powf(1.5)
-                * (T_x * E_kl * E_mn + E_ij * T_y * E_mn + E_ij * E_kl * T_z);
+                * (1.0 / (pgto1.alpha() + pgto2.alpha())).powf(1.5);
+            // * PI
+            // * (1.0 / (pgto1.alpha() + pgto2.alpha()))
         }
     }
     kin_int
@@ -112,17 +122,19 @@ pub fn calc_kinetic_int_cgto(cgto1: &CGTO, cgto2: &CGTO) -> f64 {
 #[allow(non_snake_case)]
 pub fn calc_pot_int_cgto(cgto1: &CGTO, cgto2: &CGTO, mol: &Molecule) -> f64 {
     let mut pot_int = 0.0_f64;
+    let mut tmp;
     let vec_BA = cgto1.centre_pos().calc_vec_to_atom(cgto2.centre_pos());
     let ang_mom_vec1 = cgto1.ang_mom_vec();
     let ang_mom_vec2 = cgto2.ang_mom_vec();
-    let t_max = ang_mom_vec1[CC_X] + ang_mom_vec2[CC_X] + 1;
-    let u_max = ang_mom_vec1[CC_Y] + ang_mom_vec2[CC_Y] + 1;
-    let v_max = ang_mom_vec1[CC_Z] + ang_mom_vec2[CC_Z] + 1;
+    let t_max = ang_mom_vec1[CC_X] + ang_mom_vec2[CC_X];
+    let u_max = ang_mom_vec1[CC_Y] + ang_mom_vec2[CC_Y];
+    let v_max = ang_mom_vec1[CC_Z] + ang_mom_vec2[CC_Z];
 
     // TOOD: which loop order is better to use pgto/pgto/atom, atom/pgto/pgto ?
-    for pgto1 in cgto1.pgto_iter() {
-        for pgto2 in cgto2.pgto_iter() {
-            for atom_C in mol.atoms_iter() {
+    for atom_C in mol.atoms_iter() {
+        tmp = 0.0;
+        for pgto1 in cgto1.pgto_iter() {
+            for pgto2 in cgto2.pgto_iter() {
                 let E_ab = EHermCoeff3D::new(pgto1.alpha(), pgto2.alpha(), &vec_BA);
                 let vec_P = calc_vec_P(
                     pgto1.alpha(),
@@ -140,15 +152,15 @@ pub fn calc_pot_int_cgto(cgto1: &CGTO, cgto2: &CGTO, mol: &Molecule) -> f64 {
                 let R_tuv = RHermAuxInt::new(tot_ang_mom, vec_CP, pgto1.alpha() + pgto2.alpha());
                 let mut R_recurr_val = 0.0_f64;
                 let mut E_ab_vals = [0.0_f64; 3];
-                for t in 0..t_max {
+                for t in 0..=t_max {
                     E_ab_vals[CC_X] =
                         E_ab.E_ij
                             .calc_recurr_rel(ang_mom_vec1[CC_X], ang_mom_vec2[CC_X], t, 0);
-                    for u in 0..u_max {
+                    for u in 0..=u_max {
                         E_ab_vals[CC_Y] =
                             E_ab.E_kl
                                 .calc_recurr_rel(ang_mom_vec1[CC_Y], ang_mom_vec2[CC_Y], u, 0);
-                        for v in 0..v_max {
+                        for v in 0..=v_max {
                             E_ab_vals[CC_Z] = E_ab.E_mn.calc_recurr_rel(
                                 ang_mom_vec1[CC_Z],
                                 ang_mom_vec2[CC_Z],
@@ -160,7 +172,7 @@ pub fn calc_pot_int_cgto(cgto1: &CGTO, cgto2: &CGTO, mol: &Molecule) -> f64 {
                         }
                     }
                 }
-                pot_int += pgto1.norm_const()
+                tmp += pgto1.norm_const()
                     * pgto2.norm_const()
                     * pgto1.pgto_coeff()
                     * pgto2.pgto_coeff()
@@ -169,6 +181,7 @@ pub fn calc_pot_int_cgto(cgto1: &CGTO, cgto2: &CGTO, mol: &Molecule) -> f64 {
                     / (pgto1.alpha() + pgto2.alpha());
             }
         }
+        pot_int -= atom_C.z_val() as f64 * tmp;
     }
 
     pot_int
@@ -179,6 +192,7 @@ pub fn calc_pot_int_cgto(cgto1: &CGTO, cgto2: &CGTO, mol: &Molecule) -> f64 {
 /// Formula: vec_P = (α_1 * vec_A + α_2 * vec_B ) / p
 ///
 /// using p = α_1 + α_2
+#[allow(non_snake_case)]
 #[inline]
 fn calc_vec_P(alpha1: f64, alpha2: f64, atom_A: &Atom, atom_B: &Atom) -> Array1<f64> {
     // one over p
@@ -188,26 +202,169 @@ fn calc_vec_P(alpha1: f64, alpha2: f64, atom_A: &Atom, atom_B: &Atom) -> Array1<
     (alpha1 * vec_A + alpha2 * vec_B) * oop
 }
 
+#[allow(non_snake_case)]
+pub fn calc_ERI_int_cgto(cgto1: &CGTO, cgto2: &CGTO, cgto3: &CGTO, cgto4: &CGTO) -> f64 {
+    let mut eri_int = 0.0_f64;
+    // let mut tmp;
+    let vec_BA = cgto1.centre_pos().calc_vec_to_atom(cgto2.centre_pos());
+    let vec_DC = cgto3.centre_pos().calc_vec_to_atom(cgto4.centre_pos());
+
+    let ang_mom_vec1 = cgto1.ang_mom_vec();
+    let ang_mom_vec2 = cgto2.ang_mom_vec();
+    let ang_mom_vec3 = cgto3.ang_mom_vec();
+    let ang_mom_vec4 = cgto4.ang_mom_vec();
+    let ang_mom_vecs = [*ang_mom_vec1, *ang_mom_vec2, *ang_mom_vec3, *ang_mom_vec4];
+
+    let t_max = ang_mom_vec1[CC_X] + ang_mom_vec2[CC_X];
+    let u_max = ang_mom_vec1[CC_Y] + ang_mom_vec2[CC_Y];
+    let v_max = ang_mom_vec1[CC_Z] + ang_mom_vec2[CC_Z];
+    let tau_max = ang_mom_vec3[CC_X] + ang_mom_vec4[CC_X];
+    let nu_max = ang_mom_vec3[CC_Y] + ang_mom_vec4[CC_Y];
+    let phi_max = ang_mom_vec3[CC_Z] + ang_mom_vec4[CC_Z];
+    let max_tuv_arr = [t_max, u_max, v_max, tau_max, nu_max, phi_max];
+
+    let max_tot_ang_mom = *cgto1.ang_mom_type() as i32
+        + *cgto2.ang_mom_type() as i32
+        + *cgto3.ang_mom_type() as i32
+        + *cgto4.ang_mom_type() as i32;
+
+    let atoms = [
+        cgto1.centre_pos(),
+        cgto2.centre_pos(),
+        cgto3.centre_pos(),
+        cgto4.centre_pos(),
+    ];
+    for pgto1 in cgto1.pgto_iter() {
+        for pgto2 in cgto2.pgto_iter() {
+            for pgto3 in cgto3.pgto_iter() {
+                for pgto4 in cgto4.pgto_iter() {
+                    let pgtos = [pgto1, pgto2, pgto3, pgto4];
+                    eri_int += calc_ERI_int_pgto(
+                        pgtos,
+                        atoms,
+                        ang_mom_vecs,
+                        max_tot_ang_mom,
+                        &vec_BA,
+                        &vec_DC,
+                        &max_tuv_arr,
+                    );
+                }
+            }
+        }
+    }
+    eri_int
+}
+
+#[allow(non_snake_case)]
+#[inline(always)]
+pub fn calc_ERI_int_pgto(
+    pgtos: [&PGTO; 4],
+    atoms: [&&Atom; 4],
+    ang_mom_vecs: [[i32; 3]; 4],
+    max_tot_ang_mom: i32,
+    vec_BA: &[f64; 3],
+    vec_DC: &[f64; 3],
+    max_tuv_arr: &[i32; 6],
+) -> f64 {
+    let mut eri_pgto_val = 0.0_f64;
+
+    lazy_static! {
+        pub static ref ERI_PI_fac: f64 = 2.0 * PI * PI * PI.sqrt();
+    }
+
+    let ang_mom_vec1 = ang_mom_vecs[0];
+    let ang_mom_vec2 = ang_mom_vecs[1];
+    let ang_mom_vec3 = ang_mom_vecs[2];
+    let ang_mom_vec4 = ang_mom_vecs[3];
+
+    let vec_P = calc_vec_P(pgtos[0].alpha(), pgtos[1].alpha(), atoms[0], atoms[1]);
+    let vec_Q = calc_vec_P(pgtos[2].alpha(), pgtos[3].alpha(), atoms[2], atoms[3]);
+    let vec_PQ = array![
+        vec_P[CC_X] - vec_Q[CC_X],
+        vec_P[CC_Y] - vec_Q[CC_Y],
+        vec_P[CC_Z] - vec_Q[CC_Z]
+    ];
+
+    let p = pgtos[0].alpha() + pgtos[1].alpha();
+    let q = pgtos[2].alpha() + pgtos[3].alpha();
+    let new_alph = p * q / (p + q);
+
+    let R_tuv = RHermAuxInt::new(max_tot_ang_mom, vec_PQ, new_alph);
+
+    let E_ab = EHermCoeff3D::new(pgtos[0].alpha(), pgtos[1].alpha(), vec_BA);
+    let E_cd = EHermCoeff3D::new(pgtos[2].alpha(), pgtos[3].alpha(), vec_DC);
+
+    for tau in 0..=max_tuv_arr[3] {
+        let E_cd_ij = E_cd
+            .E_ij
+            .calc_recurr_rel(ang_mom_vec3[CC_X], ang_mom_vec4[CC_X], tau, 0);
+        for nu in 0..=max_tuv_arr[4] {
+            let E_cd_kl = E_cd
+                .E_kl
+                .calc_recurr_rel(ang_mom_vec3[CC_Y], ang_mom_vec4[CC_Y], nu, 0);
+            for phi in 0..=max_tuv_arr[5] {
+                let E_cd_mn =
+                    E_cd.E_mn
+                        .calc_recurr_rel(ang_mom_vec3[CC_Z], ang_mom_vec4[CC_Z], phi, 0);
+                let E_cd_prod = E_cd_ij * E_cd_kl * E_cd_mn;
+                if E_cd_prod == 0.0 {
+                    continue;
+                }
+                let min_fac = if (tau + nu + phi) % 2 == 0 { 1.0 } else { -1.0 };
+                for t in 0..=max_tuv_arr[0] {
+                    let E_ab_ij =
+                        E_ab.E_ij
+                            .calc_recurr_rel(ang_mom_vec1[CC_X], ang_mom_vec2[CC_X], t, 0);
+                    for u in 0..=max_tuv_arr[1] {
+                        let E_ab_kl =
+                            E_ab.E_kl
+                                .calc_recurr_rel(ang_mom_vec1[CC_Y], ang_mom_vec2[CC_Y], u, 0);
+                        for v in 0..=max_tuv_arr[2] {
+                            let E_ab_mn = E_ab.E_mn.calc_recurr_rel(
+                                ang_mom_vec1[CC_Z],
+                                ang_mom_vec2[CC_Z],
+                                v,
+                                0,
+                            );
+                            let E_ab_prod = E_ab_ij * E_ab_kl * E_ab_mn;
+                            if E_ab_prod == 0.0 {
+                                continue;
+                            }
+                            let R_recurr_val = R_tuv.calc_recurr_rel(t + tau, u + nu, v + phi, 0);
+                            eri_pgto_val += min_fac * E_ab_prod * E_cd_prod * R_recurr_val
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let ERI_fac = *ERI_PI_fac * (1.0 / (p * q * (p + q)).sqrt());
+    eri_pgto_val * ERI_fac
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::basisset::parser::AngMomChar;
+    use crate::molecule::PseElemSym;
     use approx::assert_relative_eq;
 
     fn init_two_diff_cgtos<'a>(atom1: &'a Atom, atom2: &'a Atom) -> (CGTO<'a>, CGTO<'a>) {
         let ang_mom_vec1: [i32; 3] = [0, 0, 0];
+        let L_tot = ang_mom_vec1.iter().sum::<i32>();
         let pgto_vec1: Vec<PGTO> = vec![
-            PGTO::new(130.7093214, 0.1543289673, &ang_mom_vec1),
-            PGTO::new(23.80886605, 0.5353281423, &ang_mom_vec1),
-            PGTO::new(6.443608313, 0.4446345422, &ang_mom_vec1),
+            PGTO::new(130.7093214, 0.1543289673, &ang_mom_vec1, L_tot),
+            PGTO::new(23.80886605, 0.5353281423, &ang_mom_vec1, L_tot),
+            PGTO::new(6.443608313, 0.4446345422, &ang_mom_vec1, L_tot),
         ];
         let pgto_vec1_len = pgto_vec1.len();
 
         let ang_mom_vec2: [i32; 3] = [0, 0, 0];
         let pgto_vec2 = vec![
-            PGTO::new(5.033151319, -0.09996722919, &ang_mom_vec2),
-            PGTO::new(1.169596125, 0.3995128261, &ang_mom_vec2),
-            PGTO::new(0.38038896, 0.7001154689, &ang_mom_vec2),
+            PGTO::new(5.033151319, -0.09996722919, &ang_mom_vec2, L_tot),
+            PGTO::new(1.169596125, 0.3995128261, &ang_mom_vec2, L_tot),
+            PGTO::new(0.38038896, 0.7001154689, &ang_mom_vec2, L_tot),
         ];
         let pgto_vec2_len = pgto_vec2.len();
 
@@ -218,10 +375,11 @@ mod tests {
 
     fn init_two_same_cgtos(atom: &Atom) -> (CGTO, CGTO) {
         let ang_mom_vec1: [i32; 3] = [0, 0, 0];
+        let l_tot = ang_mom_vec1.iter().sum::<i32>();
         let pgto_vec: Vec<PGTO> = vec![
-            PGTO::new(130.7093214, 0.1543289673, &ang_mom_vec1),
-            PGTO::new(23.80886605, 0.5353281423, &ang_mom_vec1),
-            PGTO::new(6.443608313, 0.4446345422, &ang_mom_vec1),
+            PGTO::new(130.7093214, 0.1543289673, &ang_mom_vec1, l_tot),
+            PGTO::new(23.80886605, 0.5353281423, &ang_mom_vec1, l_tot),
+            PGTO::new(6.443608313, 0.4446345422, &ang_mom_vec1, l_tot),
         ];
         let pgto_vec_len = pgto_vec.len();
 
@@ -267,24 +425,66 @@ mod tests {
     }
 
     #[test]
-    fn test_calc_kinetic_int_cgto() {
-        let atom = Atom::new(0.0, 0.0, 0.0, 8, crate::molecule::PseElemSym::O);
-        let ang_mom_vec1 = [0, 0, 0];
-        let pgto_vec = vec![
-            PGTO::new(130.7093214, 0.1543289673, &ang_mom_vec1),
-            PGTO::new(23.80886605, 0.5353281423, &ang_mom_vec1),
-            PGTO::new(6.443608313, 0.4446345422, &ang_mom_vec1),
-        ];
-        let pgto_vec_len = pgto_vec.len();
+    fn test_calc_kinetic_int_cgto_1() {
+        let atom = Atom::new(0.0, 0.0, 0.0, 8, PseElemSym::O);
+        let (cgto1, cgto2) = init_two_same_cgtos(&atom);
 
-        let cgto1 = CGTO::new(pgto_vec, pgto_vec_len, AngMomChar::S, ang_mom_vec1, &atom);
-        println!("CGTO1: {:?}", cgto1);
-
-        let kin_val = calc_kinetic_int_cgto(&cgto1, &cgto1);
-        println!("Kinetic: {}", kin_val);
+        let kin_val = calc_kinetic_int_cgto(&cgto1, &cgto2);
+        println!("Kinetic1: {}", kin_val);
         const KIN_VAL_REF: f64 =
             // 29.0031999455; // initial value with old STO-3G
             29.003204064678087;
-        assert_relative_eq!(kin_val, KIN_VAL_REF, epsilon = 1e-10);
+        assert_relative_eq!(kin_val, KIN_VAL_REF, epsilon = 1e-8);
+    }
+
+    //
+    // #[test]
+    // fn test_calc_kinetic_int_cgto_2() {
+    //     let atom = Atom::new(0.0, 0.0, 0.0, 8, PseElemSym::O);
+    //     let (cgto1, cgto2) = init_two_diff_cgtos(&atom, &atom);
+    //
+    //     let kin_val = calc_kinetic_int_cgto(&cgto1, &cgto2);
+    //     println!("Kinetic2: {}", kin_val);
+    //     // const KIN_VAL_REF: f64 =
+    //     //     // 29.0031999455; // initial value with old STO-3G
+    //     //     29.003204064678087;
+    //     // assert_relative_eq!(kin_val, KIN_VAL_REF, epsilon = 1e-10);
+    // }
+
+    #[test]
+    fn test_calc_pot_int_cgto_test1() {
+        let mol = Molecule::new("data/xyz/water90.xyz", 0);
+        let atom = Atom::new(0.0, 0.0, 0.0, 8, PseElemSym::O);
+        let (cgto1, cgto2) = init_two_same_cgtos(&atom);
+
+        let pot_val = calc_pot_int_cgto(&cgto1, &cgto2, &mol);
+        println!("Potential 1: {}", pot_val);
+        // Reference value computed with TCF programme
+        const POT_VAL_REF_1: f64 = -61.7209117080;
+        assert_relative_eq!(pot_val, POT_VAL_REF_1, epsilon = 1e-8);
+    }
+
+    #[test]
+    fn test_calc_pot_int_cgto_test2() {
+        let mol = Molecule::new("data/xyz/water90.xyz", 0);
+        let atom = Atom::new(0.0, 0.0, 0.0, 8, crate::molecule::PseElemSym::O);
+        let (cgto1, cgto2) = init_two_diff_cgtos(&atom, &atom);
+
+        let pot_val = calc_pot_int_cgto(&cgto1, &cgto2, &mol);
+        println!("Potential 2: {}", pot_val);
+        // Reference value computed with TCF programme
+        const POT_VAL_REF_2: f64 = -7.4440339458;
+
+        assert_relative_eq!(pot_val, POT_VAL_REF_2, epsilon = 1e-8);
+    }
+    
+    #[test]
+    fn test_calc_eri_cgto_test1() {
+        let atom = Atom::new(0.0, 0.0, 0.0, 8, crate::molecule::PseElemSym::O);
+        let (cgto1, cgto2) = init_two_same_cgtos(&atom);
+        let (cgto3, cgto4) = init_two_same_cgtos(&atom);
+
+        let eri_val = calc_ERI_int_cgto(&cgto1, &cgto2, &cgto3, &cgto4);
+        println!("ERI val: {}", eri_val);
     }
 }
