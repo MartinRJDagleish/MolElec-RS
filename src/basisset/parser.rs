@@ -213,7 +213,7 @@ impl BasisSetDefTotal {
                     }
                     let ang_mom_char = AngMomChar::from_str(line_split[0])?;
                     let no_prim: usize = line_split[1].parse::<usize>()?;
-                    basis_set_def_shell.ang_mom_char = ang_mom_char.clone();
+                    basis_set_def_shell.ang_mom_char = ang_mom_char;
                     basis_set_def_shell.no_prim = no_prim;
                     if let AngMomChar::SP = ang_mom_char {
                         basis_set_def_atom.ang_mom_chars.push(AngMomChar::S);

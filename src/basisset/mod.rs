@@ -237,6 +237,7 @@ impl<'a> CGTO<'a> {
 }
 
 impl PGTO {
+    #[allow(non_snake_case)]
     pub fn new(alpha: f64, pgto_coeff: f64, ang_mom_vec: &[i32; 3], L_tot: i32) -> Self {
         Self {
             alpha,
@@ -250,6 +251,7 @@ impl PGTO {
     /// - Source: Valeev -- Fundamentals of Molecular Integrals Evaluation
     /// - Link: https://arxiv.org/pdf/2007.12057.pdf
     /// - Using formula (2.11) on page 8
+    #[allow(non_snake_case)]
     pub fn calc_norm_const(alpha: f64, ang_mom_vec: &[i32; 3], L_tot: i32) -> f64 {
         // let numerator: f64 = (2.0 * alpha / PI).powf(1.5) * (4.0 * alpha).powi(L_tot);
         // let denom: i32 = ang_mom_vec
