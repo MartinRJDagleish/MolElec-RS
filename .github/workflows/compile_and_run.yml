@@ -12,7 +12,9 @@ jobs:
         with:
           toolchain: stable
       - name: Make the script file executable (OpenBLAS install)
-        run: chmod +x install_openblas.bash
+        run: |
+          ls -lah
+          chmod +x install_openblas.bash
       - name: Run the script (Install OpenBLAS)
         run: |
           ./install_openblas.bash
