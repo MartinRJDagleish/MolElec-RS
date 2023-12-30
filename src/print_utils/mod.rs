@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Instant};
 
-pub fn print_prog_header() {
+pub fn print_initial_header() {
     //     const HEADER_V1: &str = r#"
     // ___  ___      _   _____ _            ______  _____
     // |  \/  |     | | |  ___| |           | ___ \/  ___|
@@ -58,9 +58,12 @@ pub fn print_prog_header() {
     println!("{}", HEADER_V5);
 }
 
-// struct Timer {
-//     timings: Vec<Timinig>,
-// }
+const HEADER_STR: &str = "**********************************************************************";
+
+pub(crate) fn print_header_for_section(inp_str: &str) {
+    let centered_str = format!("*{:^68}*", inp_str);
+    println!("\n{}\n{}\n{}\n", HEADER_STR, centered_str, HEADER_STR);
+}
 
 pub struct ExecTimes {
     timings_map: HashMap<String, [Instant; 2]>,
@@ -86,7 +89,7 @@ impl ExecTimes {
     }
 
     pub fn print(&self) {
-        println!("Execution times:");
+        print_header_for_section("Execution times");
         for (name, timings) in &self.timings_map {
             let exec_time = timings[1].duration_since(timings[0]);
             println!("  {}: {:?}", name, exec_time);
