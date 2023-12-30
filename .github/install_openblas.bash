@@ -21,9 +21,13 @@ export COMMON_OPT="-O2 -march=native"
 export CFLAGS="-O2 -march=native"
 export FCOMMON_OPT="-O2 -march=native"
 export FCFLAGS="-O2 -march=native"
+# ORIGINAL TWO CMDS
+# make -j DYNAMIC_ARCH=0 CC=gcc FC=gfortran HOSTCC=gcc BINARY=64 INTERFACE=64 \
+#   USE_OPENMP=1 LIBNAMESUFFIX=openmp
+# sudo make PREFIX=$OPENBLAS_DIR LIBNAMESUFFIX=openmp install
 make -j DYNAMIC_ARCH=0 CC=gcc FC=gfortran HOSTCC=gcc BINARY=64 INTERFACE=64 \
-  USE_OPENMP=1 LIBNAMESUFFIX=openmp
-sudo make PREFIX=$OPENBLAS_DIR LIBNAMESUFFIX=openmp install
+  USE_OPENMP=1 
+sudo make PREFIX=$OPENBLAS_DIR install
 
 # 4. Install
 export C_INCLUDE_PATH=$C_INCLUDE_PATH:/opt/OpenBLAS/include
