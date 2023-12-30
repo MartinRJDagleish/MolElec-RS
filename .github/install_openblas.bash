@@ -8,10 +8,10 @@ OPENBLAS_DIR=/opt/openblas
 sudo mkdir $OPENBLAS_DIR
 
 # 3. Build and install openblas library from source
-cd $HOME
+# cd $HOME
 git clone https://github.com/xianyi/OpenBLAS
 
-cd $HOME/OpenBLAS
+cd OpenBLAS
 export USE_THREAD=1
 export NUM_THREADS=64
 export DYNAMIC_ARCH=0
