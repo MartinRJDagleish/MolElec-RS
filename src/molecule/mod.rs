@@ -244,7 +244,7 @@ impl Molecule {
         let mut z_vals: Vec<u32> = Vec::with_capacity(no_atoms);
         let mut atoms: Vec<Atom> = Vec::with_capacity(no_atoms);
         for (at_idx, at_str) in at_strs.iter().enumerate() {
-            let pse_sym = PseElemSym::from_str(&at_str)
+            let pse_sym = PseElemSym::from_str(at_str)
                 .expect("PseElemSym does not exist; check your input again!");
             let z_val = PSE_ELEM_Z_VAL_HMAP.get(&pse_sym).unwrap_or(&0).to_owned();
             let atom = Atom::new(

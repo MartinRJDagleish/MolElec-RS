@@ -222,13 +222,26 @@ mod tests {
 
     #[test]
     fn test_calc_eri_cgto_test1() {
-        let atom = Atom::new(0.0, 0.0, 0.0, 8, crate::molecule::PseElemSym::O);
+        let atom = Atom::new(0.0, 0.0, 0.0, 8, PseElemSym::O);
         let (cgto1, cgto2) = init_two_same_cgtos(&atom);
         let (cgto3, cgto4) = init_two_same_cgtos(&atom);
 
         let eri_val = calc_ERI_int_cgto(&cgto1, &cgto2, &cgto3, &cgto4);
-        println!("ERI val: {}", eri_val);
+        println!("ERI val test1: {}", eri_val);
         const ERI_REF_VAL1: f64 = 4.785065751815719;
         assert_relative_eq!(eri_val, ERI_REF_VAL1, epsilon = 1e-9);
+    }
+
+    #[test]
+    fn test_calc_eri_cgto_test2() {
+        let atom1 = Atom::new(0.0, 0.0, 0.0, 8, PseElemSym::O);
+        let atom2 = Atom::new(0.0, 0.0, 0.0, 8, PseElemSym::O);
+        let (cgto1, cgto2) = init_two_diff_cgtos(&atom1, &atom2);
+        let (cgto3, cgto4) = init_two_same_cgtos(&atom1);
+
+        let eri_val = calc_ERI_int_cgto(&cgto1, &cgto2, &cgto3, &cgto4);
+        println!("ERI val test2: {}", eri_val);
+        // const ERI_REF_VAL1: f64 = 4.785065751815719;
+        // assert_relative_eq!(eri_val, ERI_REF_VAL1, epsilon = 1e-9);
     }
 }

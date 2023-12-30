@@ -96,7 +96,6 @@ impl EHermCoeff3D {
                 .calc_recurr_rel(ang_mom_vec1[CC_Z], ang_mom_vec2[CC_Z], no_nodes, deriv_deg);
         (E_ij_val, E_kl_val, E_mn_val) // return components
     }
-    
 }
 
 impl EHermCoeff1D {
@@ -321,18 +320,13 @@ mod tests {
         assert_abs_diff_eq!(result, 1.0, epsilon = 1e-10);
     }
 
-
     #[test]
     fn test_E_calc_recurr_rel_deriv_test1() {
-        // let l1 = 2;
-        // let l2 = 1;
         let ang_mom_vec1 = [2, 0, 0];
         let ang_mom_vec2 = [2, 0, 0];
         let no_nodes = 0;
         let deriv_deg = 2;
-        let alpha1 = 15.5;
-        let alpha2 = 10.3;
-        // let test_vec_AB = Array1::from_vec(vec![0.1, 0.2, 0.3]);
+        let (alpha1, alpha2) = (15.5, 10.3);
 
         let test_vec_AB = [0.1, 0.2, 0.3];
 
@@ -340,14 +334,12 @@ mod tests {
 
         let result = E_ab.calc_recurr_rel(&ang_mom_vec1, &ang_mom_vec2, no_nodes, deriv_deg);
         println!("E_ab: {}", result);
-        const REF_DERIV_VAL_1: f64 = -2.6449304846129680;
+        const REF_DERIV_VAL_1: f64 = -2.644_930_484_612_968;
         assert_abs_diff_eq!(result, REF_DERIV_VAL_1, epsilon = 1e-10); // reference from TCF
     }
 
     #[test]
     fn test_E_calc_recurr_rel_deriv_test2() {
-        // let l1 = 2;
-        // let l2 = 1;
         let ang_mom_vec1 = [2, 0, 0];
         let ang_mom_vec2 = [1, 0, 0];
         let no_nodes = 2;
@@ -360,16 +352,14 @@ mod tests {
 
         let result = E_ab.calc_recurr_rel(&ang_mom_vec1, &ang_mom_vec2, no_nodes, deriv_deg);
         println!("result: {}", result);
-        assert_abs_diff_eq!(result, 0.0000000000767396, epsilon = 1e-10); // reference from TCF
+        const REF_DERIV_VAL_2: f64 = 0.000_000_000_076_739_6;
+        assert_abs_diff_eq!(result, REF_DERIV_VAL_2, epsilon = 1e-10); // reference from TCF
     }
 
     #[test]
     fn test_R_calc_recurr_rel_test1() {
-        let alpha1 = 15.5;
-        let alpha2 = 10.3;
-        let t = 2;
-        let u = 1;
-        let v = 0;
+        let (alpha1, alpha2) = (15.5, 10.3);
+        let (t, u, v) = (2, 1, 0);
         let boys_order = t + u + v;
         let p = alpha1 + alpha2;
 
@@ -384,11 +374,8 @@ mod tests {
 
     #[test]
     fn test_R_calc_recurr_rel_test2() {
-        let alpha1 = 15.5;
-        let alpha2 = 10.3;
-        let t = 0;
-        let u = 0;
-        let v = 0;
+        let (alpha1, alpha2) = (15.5, 10.3);
+        let (t, u, v) = (0, 0, 0);
         let boys_order = t + u + v;
         let p = alpha1 + alpha2;
 
@@ -403,11 +390,8 @@ mod tests {
 
     #[test]
     fn test_R_calc_recurr_rel_test3() {
-        let alpha1 = 15.5;
-        let alpha2 = 10.3;
-        let t = 2;
-        let u = 2;
-        let v = 2;
+        let (alpha1, alpha2) = (15.5, 10.3);
+        let (t, u, v) = (2, 2, 2);
         let boys_order = t + u + v;
         let p = alpha1 + alpha2;
 
