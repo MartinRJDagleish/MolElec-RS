@@ -45,6 +45,7 @@ pub fn calc_ERI_int_cgto(cgto1: &CGTO, cgto2: &CGTO, cgto3: &CGTO, cgto4: &CGTO)
         cgto3.centre_pos(),
         cgto4.centre_pos(),
     ];
+    //TODO: still wrong calculation
     for pgto1 in cgto1.pgto_iter() {
         for pgto2 in cgto2.pgto_iter() {
             for pgto3 in cgto3.pgto_iter() {
@@ -158,7 +159,7 @@ pub fn calc_ERI_int_pgto(
         }
     }
 
-    let ERI_fac = *ERI_PI_FAC * (1.0 / (p * q * (p + q)).sqrt());
+    let ERI_fac = *ERI_PI_FAC * (1.0 / (p * q * (p + q).sqrt()));
     eri_pgto_val * ERI_fac
 }
 
@@ -228,6 +229,6 @@ mod tests {
         let eri_val = calc_ERI_int_cgto(&cgto1, &cgto2, &cgto3, &cgto4);
         println!("ERI val: {}", eri_val);
         const ERI_REF_VAL1: f64 = 4.785065751815719;
-        assert_relative_eq!(eri_val, ERI_REF_VAL1, epsilon = 1e-8);
+        assert_relative_eq!(eri_val, ERI_REF_VAL1, epsilon = 1e-9);
     }
 }
