@@ -1,7 +1,22 @@
 #![allow(non_snake_case)]
 use ndarray::Array2;
-
 mod rhf;
+
+
+pub struct CalcSettings {
+    pub max_scf_iter: usize,
+    pub e_diff_thrsh: f64,
+    pub commu_conv_thrsh: f64,
+    pub use_diis: bool,
+    pub diis_sett: DiisSettings,
+}
+
+pub struct DiisSettings {
+    pub diis_start: usize,
+    pub diis_end: usize,
+    pub diis_max: usize,
+}
+
 
 #[derive(Debug,Default)]
 struct SCF {
