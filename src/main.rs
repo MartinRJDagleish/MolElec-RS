@@ -1,18 +1,9 @@
 #![allow(dead_code, clippy::upper_case_acronyms, non_snake_case)]
 #[macro_use]
 extern crate lazy_static;
+extern crate ndarray;
+extern crate openblas_src;
 
-// extern crate ndarray;
-// extern crate openblas_src;
-
-// #[cfg_attr(feature = "use_openblas", cfg_attr(all(not(feature = "use_openblas"), feature = "use_netlib")))]
-// extern crate ndarray;
-// #[cfg_attr(feature = "use_openblas", cfg_attr(all(not(feature = "use_openblas"), feature = "use_netlib")))]
-// extern crate ndarray_linalg;
-// #[cfg_attr(feature = "use_openblas", cfg_attr(all(not(feature = "use_openblas"), feature = "use_netlib")))]
-// extern crate blas_src;
-// #[cfg_attr(feature = "use_openblas", cfg_attr(all(not(feature = "use_openblas"), feature = "use_netlib")))]
-// extern crate openblas_src;
 
 mod basisset;
 mod calc_type;

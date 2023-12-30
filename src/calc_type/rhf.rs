@@ -1,10 +1,11 @@
-use crate::basisset::BasisSet;
+use crate::basisset::{BasisSet, Shell};
+use crate::calc_type::ERI_Arr1;
 use crate::mol_int_and_deriv::{
     oe_int::{calc_kinetic_int_cgto, calc_overlap_int_cgto, calc_pot_int_cgto},
     te_int::calc_ERI_int_cgto,
 };
 use crate::molecule::Molecule;
-use ndarray::Array2;
+use ndarray::{Array2, Array1};
 
 use super::CalcSettings;
 
@@ -87,8 +88,24 @@ pub fn calc_1e_int_matrs(
     (S_matr, T_matr, V_matr)
 }
 
+// fn process_shells(basis: &BasisSet, no_shells: usize) {
+//     for sh_idx1 in 0..no_shells {
+//         let shell1 = basis.shell(sh_idx1);
+//         process_shell_pairs(basis, shell1, sh_idx1, no_shells);
+//     }
+// }
+//
+// #[inline]
+// fn process_shell_pairs(basis: &BasisSet, shell1: &Shell, sh_idx1: usize, no_shells: usize) {
+//     for sh_idx2 in 0..=sh_idx1 {
+//         let shell2 = basis.shell(sh_idx2);
+//         // Further processing
+//     }
+// }
+
+
 #[inline(always)]
-fn calc_cmp_idx(idx1: usize, idx2: usize) -> usize {
+pub fn calc_cmp_idx(idx1: usize, idx2: usize) -> usize {
     if idx1 >= idx2 {
         idx1 * (idx1 + 1) / 2 + idx2
     } else {
@@ -96,11 +113,15 @@ fn calc_cmp_idx(idx1: usize, idx2: usize) -> usize {
     }
 }
 
-pub fn calc_2e_int_matr(basis: &BasisSet) -> Array2<f64> {
-    // let ERI
+pub fn calc_2e_int_matr(basis: &BasisSet) -> ERI_Arr1 {
+    let mut eri = ERI_Arr1::new(basis.no_bf());
+
     let (mut mu_sh_offset, mut nu_sh_offset, mut lambda_sh_offset, mut sigma_sh_offset) =
         (0, 0, 0, 0);
     let no_shells = basis.no_shells();
+
+    // process_shells(basis, no_shells);
+
 
     for sh_idx1 in 0..no_shells {
         let shell1 = basis.shell(sh_idx1);
@@ -123,21 +144,18 @@ pub fn calc_2e_int_matr(basis: &BasisSet) -> Array2<f64> {
                                         if lambda_idx >= sigma_idx {
                                             let lambda_sigma = calc_cmp_idx(lambda_idx, sigma_idx);
                                             if mu_nu >= lambda_sigma {
-                                                // TODO: add logic for lambda and sigma offsets
-                                                // create some form of container for ERI (potentially avoid an Array4 if possible)
-                                                // Use Array1 with cmp_idx -> ERI struct with better indexing? 
-
-                                                // G_matr[(mu_nu, lambda_sigma)] =
-                                                //     calc_ERI_int_cgto(cgto1, cgto2, cgto3, cgto4);
-                                                // G_matr[(lambda_sigma, mu_nu)] =
-                                                //     G_matr[(mu_nu, lambda_sigma)];
+                                                let cmp_idx = calc_cmp_idx(mu_nu, lambda_sigma);
+                                                eri[cmp_idx] = calc_ERI_int_cgto(cgto1, cgto2, cgto3, cgto4);
                                             } else {
                                                 continue;
                                             }
                                         }
                                     }
                                 }
+                                sigma_sh_offset += basis.shell_len(sh_idx4);
                             }
+                            sigma_sh_offset = 0;
+                            lambda_sh_offset += basis.shell_len(sh_idx3);
                         }
                     } else {
                         continue;
@@ -150,20 +168,16 @@ pub fn calc_2e_int_matr(basis: &BasisSet) -> Array2<f64> {
         mu_sh_offset += basis.shell_len(sh_idx1);
     }
 
-    todo!();
-    // G_matr
+    eri
 }
-
 
 /// This is the main RHF SCF function to be called and run the RHF SCF calculation
 pub(crate) fn rhf_scf_normal(calculation_settings: CalcSettings, max_scf_iter: usize) {
-
     for scf_iter in 0..max_scf_iter {
         println!("SCF Iteration: {}", scf_iter);
     }
     todo!();
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -180,5 +194,18 @@ mod tests {
         println!("{}", S_matr);
         println!("{}", T_matr);
         println!("{}", V_matr);
+    }
+    
+    #[test]
+    fn test_calc_2e_int_matr() {
+        println!("Test calc_2e_int_matr");
+        let mol = Molecule::new("data/xyz/water90.xyz", 0);
+        let basis = BasisSet::new("STO-3G", &mol);
+
+        let eri = calc_2e_int_matr(&basis);
+        // println!("{:?}", eri);
+        for (idx, val) in eri.eri_arr.iter().enumerate() {
+            println!("{}: {}", idx, val);
+        }
     }
 }
