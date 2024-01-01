@@ -3,7 +3,7 @@ use crate::calc_type::rhf::calc_cmp_idx;
 use ndarray::{Array1, Array2};
 use std::ops::{Index, IndexMut};
 
-mod rhf;
+pub(crate) mod rhf;
 
 pub(crate) enum CalcType {
     RHF,
@@ -40,7 +40,6 @@ pub struct SCF {
     C_matr_conv: Array2<f64>,
     P_matr_conv: Array2<f64>, // [ ] TODO: pot. change this to sparse matrix
     orb_energies_conv: Array1<f64>,
-    diis: DIIS,
 }
 
 

@@ -4,16 +4,17 @@ extern crate lazy_static;
 extern crate ndarray;
 extern crate openblas_src;
 
-
 mod basisset;
 mod calc_type;
 mod mol_int_and_deriv;
 mod molecule;
 mod print_utils;
 
-use crate::{print_utils::print_initial_header, calc_type::CalcType};
+use crate::{calc_type::CalcType, print_utils::print_initial_header};
 use basisset::BasisSet;
+use calc_type::{DiisSettings, CalcSettings};
 use molecule::Molecule;
+use crate::calc_type::rhf::rhf_scf_normal;
 
 fn main() {
     //##################################
@@ -25,13 +26,13 @@ fn main() {
     print_initial_header();
 
     exec_times.start("Molecule");
-    let _mol = Molecule::new("data/xyz/water90.xyz", 0);
-    println!("Molecule: {:?}", _mol);
+    let mol = Molecule::new("data/xyz/water90.xyz", 0);
+    // println!("Molecule: {:?}", _mol);
     exec_times.stop("Molecule");
 
     exec_times.start("BasisSet");
-    let _basis = BasisSet::new("STO-3G", &_mol);
-    println!("BasisSet: {:?}", _basis);
+    let basis = BasisSet::new("STO-3G", &mol);
+    // println!("BasisSet: {:?}", _basis);
     // println!("Molecule: {:?}", _basis);
     // println!("\n\n");
     // for shell in basis.shell_iter() {
@@ -43,8 +44,26 @@ fn main() {
     //###           BODY             ###
     //##################################
     // Calculation type
-    let calc_type = CalcType::RHF;
+    //
+    exec_times.start("RHF noDIIS");
+    let _calc_type = CalcType::RHF;
 
+    let calc_sett = CalcSettings {
+        max_scf_iter: 100,
+        e_diff_thrsh: 1e-10,
+        commu_conv_thrsh: 1e-10,
+        use_diis: false,
+        use_direct_scf: false,
+        diis_sett: DiisSettings {
+            diis_start: 0,
+            diis_end: 0,
+            diis_max: 0,
+        },
+    };
+    
+    let _scf = rhf_scf_normal(calc_sett, &basis, &mol);
+    exec_times.stop("RHF noDIIS");
+    
 
     exec_times.stop("Total");
 

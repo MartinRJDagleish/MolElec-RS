@@ -7,7 +7,7 @@ use crate::mol_int_and_deriv::{
 use crate::molecule::Molecule;
 use ndarray::parallel::prelude::*;
 use ndarray::{s, Array, Array1, Array2, Zip};
-use ndarray_linalg::{Eigh, SymmetricSqrt, UPLO};
+use ndarray_linalg::{Eigh, UPLO};
 
 use super::{CalcSettings, SCF};
 
@@ -190,6 +190,7 @@ pub(crate) fn rhf_scf_normal(calc_sett: CalcSettings, basis: &BasisSet, mol: &Mo
     // - [ ] Print header for RHF SCF
     // - [ ] Print settings
 
+    let mut is_conv = false;
     let mut scf = SCF::default();
     let V_nuc = mol.calc_core_potential();
     let (S_matr, H_core) = calc_1e_int_matrs(basis, mol);
@@ -199,7 +200,7 @@ pub(crate) fn rhf_scf_normal(calc_sett: CalcSettings, basis: &BasisSet, mol: &Mo
         eri = calc_2e_int_matr(basis);
     }
 
-    let S_matr_inv_sqrt = inv_ssqrt(S_matr, UPLO::Upper);
+    let S_matr_inv_sqrt = inv_ssqrt(&S_matr, UPLO::Upper);
 
     // Init matrices for SCF loop
     let mut C_matr_AO;
@@ -215,9 +216,9 @@ pub(crate) fn rhf_scf_normal(calc_sett: CalcSettings, basis: &BasisSet, mol: &Mo
     // Print SCF iteration Header
     println!(
         "{:>3} {:^20} {:^20} {:^20} {:^20} {:^20}",
-        "Iter", "E_scf", "E_tot", "RMS(P)", "Delta(E)", "FPS - SPF"
+        "Iter", "E_scf", "E_tot", "RMS(P)", "Delta(E)", "RMS(|FPS - SPF|)"
     );
-    for scf_iter in 0..calc_sett.max_scf_iter {
+    for scf_iter in 0..=calc_sett.max_scf_iter {
         if scf_iter == 0 {
             F_matr_pr = S_matr_inv_sqrt.dot(&F_matr).dot(&S_matr_inv_sqrt);
             // println!("F_matr_pr:\n {}", &F_matr_pr);
@@ -246,29 +247,50 @@ pub(crate) fn rhf_scf_normal(calc_sett: CalcSettings, basis: &BasisSet, mol: &Mo
 
             let rms_p_val = calc_rms_2_matr(&P_matr, &P_matr_old.clone());
             let delta_E = E_scf_curr - E_scf_prev;
+            let fps_comm = calc_FPS_comm(&F_matr, &P_matr, &S_matr);
+            let rms_comm_val =
+                (fps_comm.par_iter().map(|x| x * x).sum::<f64>() / fps_comm.len() as f64).sqrt();
 
             // SCF output
             println!(
-                "{:>3} {:>20.12} {:>20.12} {:>20.12} {:>20.12}",
-                scf_iter, E_scf_curr, scf.E_tot_conv, rms_p_val, delta_E
+                "{:>3} {:>20.12} {:>20.12} {:>20.12} {:>20.12} {:>20.12}",
+                scf_iter, E_scf_curr, scf.E_tot_conv, rms_p_val, delta_E, rms_comm_val
             );
 
-            // TODO! do not use rms_p_val for conv, but rather the commutator FPS - SPF =! 0
-            if (delta_E.abs() < calc_sett.e_diff_thrsh) && (rms_p_val < calc_sett.commu_conv_thrsh)
+            if (delta_E.abs() < calc_sett.e_diff_thrsh)
+                && (rms_p_val < calc_sett.commu_conv_thrsh)
+                && (rms_comm_val < calc_sett.commu_conv_thrsh)
             {
                 scf.tot_scf_iter = scf_iter;
+                scf.E_scf_conv = E_scf_curr;
                 scf.C_matr_conv = C_matr_AO.clone();
                 scf.P_matr_conv = P_matr.clone();
                 scf.orb_energies_conv = orb_ener.clone();
-                println!("SCF CONVERGED!");
-                println!("Total SCF iterations: {}", scf.tot_scf_iter);
+                println!("\nSCF CONVERGED!");
+                // println!("Total SCF iterations: {}", scf.tot_scf_iter);
+                is_conv = true;
+                break;
+            } else if scf_iter == calc_sett.max_scf_iter {
+                println!("\nSCF DID NOT CONVERGE!");
+                // println!("Total SCF iterations: {}", scf.tot_scf_iter);
                 break;
             }
-
             E_scf_prev = E_scf_curr;
             P_matr_old = P_matr.clone();
             calc_P_matr(&mut P_matr, &C_matr_AO, basis.no_occ());
         }
+    }
+
+    if is_conv {
+        println!("{:*<55}", "");
+        println!("* {:^51} *", "FINAL RESULTS");
+        println!("{:*<55}", "");
+        println!("  {:^50}", "SCF (in a.u.)");
+        println!("  {:=^50}  ", "");
+        println!("  {:<25}{:>25}", "Total SCF iterations:", scf.tot_scf_iter);
+        println!("  {:<25}{:>25.18}", "Final SCF energy:", scf.E_scf_conv);
+        println!("  {:<25}{:>25.18}", "Final tot. energy:", scf.E_tot_conv);
+        println!("{:*<55}", "");
     }
     scf
 }
@@ -316,10 +338,10 @@ fn calc_rms_2_matr(matr1: &Array2<f64>, matr2: &Array2<f64>) -> f64 {
         .into_par_iter()
         .map(|(val1, val2)| (val1 - val2).powi(2))
         .sum::<f64>()
-        .sqrt()
+        / (matr1.len() as f64).sqrt()
 }
 
-fn inv_ssqrt(arr2: Array2<f64>, uplo: UPLO) -> Array2<f64> {
+fn inv_ssqrt(arr2: &Array2<f64>, uplo: UPLO) -> Array2<f64> {
     let (e, v) = arr2.eigh(uplo).unwrap();
     let e_inv_sqrt = Array1::from_iter(e.iter().map(|x| x.powf(-0.5)));
     let e_inv_sqrt_diag = Array::from_diag(&e_inv_sqrt);
@@ -328,13 +350,14 @@ fn inv_ssqrt(arr2: Array2<f64>, uplo: UPLO) -> Array2<f64> {
 }
 
 #[inline(always)]
-fn calc_DIIS_error_matr(
-    F_pr_matr: &Array2<f64>,
+/// This is also the DIIS error matrix
+fn calc_FPS_comm(
+    F_matr: &Array2<f64>,
     P_matr: &Array2<f64>,
     S_matr: &Array2<f64>,
     // S_matr_inv_sqrt: &Array2<f64>,
 ) -> Array2<f64> {
-    F_pr_matr.dot(P_matr).dot(S_matr) - S_matr.dot(P_matr).dot(F_pr_matr)
+    F_matr.dot(P_matr).dot(S_matr) - S_matr.dot(P_matr).dot(F_matr)
 }
 
 // TODO: fix this function
@@ -433,5 +456,6 @@ mod tests {
         };
 
         let _scf = rhf_scf_normal(calc_sett, &basis, &mol);
+        println!("{:?}", _scf);
     }
 }

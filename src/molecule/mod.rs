@@ -7,6 +7,7 @@ use getset::CopyGetters;
 use ndarray::{s, Array1, Array2, Axis};
 use ndarray_linalg::{Eigh, InverseH, UPLO};
 use std::collections::HashMap;
+use std::io::Seek;
 use std::str::FromStr;
 use std::{
     fs::File,
@@ -213,13 +214,28 @@ impl Molecule {
             no_atoms,
         }
     }
+    
+    fn print_input_file(reader: &mut BufReader<File>) {
+        println!("{:*<30}", "");
+        println!("* {:^26} *", "Inputfile:");
+        println!("{:*<30}\n", "");
+        
+        println!("{:-<75}", "");
+        for line in reader.lines() {
+            println!("> {}", line.unwrap());
+        }
+        println!("{:-<75}\n\n", "");
+    }
 
     fn read_xyz_xmol_inputfile(geom_filename: &str) -> GeometryResult {
         println!("Inputfile: {geom_filename}");
         println!("Reading geometry from input file...\n");
 
         let geom_file = File::open(geom_filename)?;
-        let reader = BufReader::new(geom_file);
+        let mut reader = BufReader::new(geom_file);
+        Self::print_input_file(&mut reader);
+        reader.seek(std::io::SeekFrom::Start(0))?; // reset reader to start of file
+
         let mut lines = reader
             .lines()
             .map(|line| line.expect("Failed to read line!"));
@@ -238,7 +254,7 @@ impl Molecule {
                 geom_matr[(at_idx, cc)] = line_parts.next().unwrap().parse().unwrap();
             }
         }
-
+        
         //* Convert geom_matr from Angstrom to Bohr (atomic units) */
         const AA_TO_BOHR: f64 = 1.0e-10 / physical_constants::BOHR_RADIUS;
         geom_matr.mapv_inplace(|x| x * AA_TO_BOHR);
