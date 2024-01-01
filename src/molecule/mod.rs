@@ -3,6 +3,7 @@ pub(crate) mod cartesian_comp;
 
 use atom::Atom;
 use cartesian_comp::{Cartesian, CC_X, CC_Y, CC_Z};
+use getset::CopyGetters;
 use ndarray::{s, Array1, Array2, Axis};
 use ndarray_linalg::{Eigh, InverseH, UPLO};
 use std::collections::HashMap;
@@ -166,14 +167,16 @@ lazy_static! {
     ]);
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, CopyGetters)]
 pub struct Molecule {
     tot_charge: i32,
     tot_mass: f64,
     atoms: Vec<Atom>,
     geom: Geometry,
     z_vals: Vec<u32>,
+    #[getset(get_copy = "pub")]
     no_elec: usize,
+    #[getset(get_copy = "pub")]
     no_atoms: usize,
 }
 
@@ -261,12 +264,8 @@ impl Molecule {
         Ok((z_vals, geom_matr, atoms, no_atoms))
     }
 
-    #[inline(always)]
-    fn no_atoms(&self) -> usize {
-        self.atoms.len()
-    }
 
-    fn calc_core_potential(&self) -> f64 {
+    pub(crate) fn calc_core_potential(&self) -> f64 {
         let mut core_potential = 0.0;
         let coords = &self.geom.coords_matr;
 

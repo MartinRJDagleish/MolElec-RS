@@ -33,7 +33,7 @@ enum BasisSetVariants {
 ///
 /// ## Notes
 /// - `no_bf` = `no_ao` * 2 if UHF; `no_bf` = `no_ao` if RHF
-#[derive(Debug, CopyGetters, Getters)]
+#[derive(Debug, CopyGetters)]
 pub(crate) struct BasisSet<'a> {
     name: String,
     use_pure_am: bool,
@@ -41,21 +41,24 @@ pub(crate) struct BasisSet<'a> {
     no_ao: usize,
     #[getset(get_copy = "pub")]
     no_bf: usize,
+    #[getset(get_copy = "pub")]
+    no_occ: usize,
     shells: Vec<Shell<'a>>,
-    shell_lens: Vec<usize>,
+    sh_len_offsets: Vec<usize>,
 }
 
 #[derive(Debug, CopyGetters)]
 pub struct Shell<'a> {
     is_pure_am: bool,
     cgtos: Vec<CGTO<'a>>, // == basis funcs.
+    ang_mom_type: AngMomChar,
     #[getset(get_copy = "pub")]
     shell_len: usize,
     center_pos: &'a Atom,
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, Getters, Clone)]
+#[derive(Clone, Debug, Getters)]
 pub struct CGTO<'a> {
     pgto_vec: Vec<PGTO>,
     no_pgtos: usize,
@@ -81,7 +84,8 @@ impl<'a> BasisSet<'a> {
         let basis_set_def_total = parser::BasisSetDefTotal::new(basisset_name);
         // Potential speedup: Preallocate vector with correct size
         let mut shells: Vec<Shell<'_>> = Vec::<Shell>::new();
-        let mut shell_lens: Vec<usize> = Vec::<usize>::new();
+        let mut sh_len_offsets: Vec<usize> = vec![0]; // First element is 0
+        let mut sh_offset = 0;
         let mut no_bf = 0;
         for atom in mol.atoms_iter() {
             let basis_set_def_at = basis_set_def_total
@@ -91,7 +95,8 @@ impl<'a> BasisSet<'a> {
             for shell_idx in 0..no_shells {
                 let shell = Shell::new(atom, shell_idx, basis_set_def_at);
                 no_bf += shell.shell_len;
-                shell_lens.push(shell.shell_len);
+                sh_offset += shell.shell_len;
+                sh_len_offsets.push(sh_offset);
                 shells.push(shell);
             }
         }
@@ -101,8 +106,9 @@ impl<'a> BasisSet<'a> {
             name: basisset_name.to_string(),
             no_ao: no_bf,
             no_bf,
+            no_occ: mol.no_elec() / 2,
             shells,
-            shell_lens,
+            sh_len_offsets,
             use_pure_am: false, // hard code for now
         }
     }
@@ -120,10 +126,10 @@ impl<'a> BasisSet<'a> {
     pub fn no_shells(&self) -> usize {
         self.shells.len()
     }
-    
+
     #[inline(always)]
-    pub fn shell_len(&self, sh_idx: usize) -> usize {
-        self.shell_lens[sh_idx]
+    pub fn sh_len_offset(&self, sh_idx: usize) -> usize {
+        self.sh_len_offsets[sh_idx]
     }
 }
 
@@ -170,6 +176,7 @@ impl<'a> Shell<'a> {
         Self {
             is_pure_am: false,
             cgtos,
+            ang_mom_type: curr_ang_mom_char,
             shell_len: no_cgtos,
             center_pos: atom,
         }
@@ -301,10 +308,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn create_basis_set() {
-        println!("Test create_basis_set");
+    fn test_create_basis_set() {
         let mol = Molecule::new("data/xyz/water90.xyz", 0);
         let test_basis = BasisSet::new("STO-3G", &mol);
         println!("{:?}", test_basis);
+    }
+    
+    #[test]
+    fn test_sh_len_offsets() {
+        let mol = Molecule::new("data/xyz/water90.xyz", 0);
+        let test_basis = BasisSet::new("STO-3G", &mol);
+        
+        println!("sh_len_offsets: {:?}", test_basis.sh_len_offsets);
+        for shell in test_basis.shells.iter() {
+            println!("Shell: {:?}\n", shell);
+            println!("Type:{:?}", shell.ang_mom_type);
+        }
     }
 }

@@ -11,7 +11,7 @@ mod mol_int_and_deriv;
 mod molecule;
 mod print_utils;
 
-use crate::print_utils::print_initial_header;
+use crate::{print_utils::print_initial_header, calc_type::CalcType};
 use basisset::BasisSet;
 use molecule::Molecule;
 
@@ -43,7 +43,8 @@ fn main() {
     //###           BODY             ###
     //##################################
     // Calculation type
-    // let calc_type = "";
+    let calc_type = CalcType::RHF;
+
 
     exec_times.stop("Total");
 

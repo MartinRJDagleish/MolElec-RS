@@ -1,13 +1,15 @@
-use crate::basisset::{BasisSet, Shell};
-use crate::calc_type::ERI_Arr1;
+use crate::basisset::BasisSet;
+use crate::calc_type::EriArr1;
 use crate::mol_int_and_deriv::{
     oe_int::{calc_kinetic_int_cgto, calc_overlap_int_cgto, calc_pot_int_cgto},
     te_int::calc_ERI_int_cgto,
 };
 use crate::molecule::Molecule;
-use ndarray::{Array2, Array1};
+use ndarray::parallel::prelude::*;
+use ndarray::{s, Array, Array1, Array2, Zip};
+use ndarray_linalg::{Eigh, SymmetricSqrt, UPLO};
 
-use super::CalcSettings;
+use super::{CalcSettings, SCF};
 
 /// ### Description
 /// Calculate the 1e integrals for the given basis set and molecule.
@@ -21,43 +23,70 @@ use super::CalcSettings;
 /// * `basis` - The basis set.
 /// * `mol` - The molecule.
 ///
-///
-pub fn calc_1e_int_matrs(
-    basis: &BasisSet,
-    mol: &Molecule,
-) -> (Array2<f64>, Array2<f64>, Array2<f64>) {
+pub fn calc_1e_int_matrs(basis: &BasisSet, mol: &Molecule) -> (Array2<f64>, Array2<f64>) {
     let mut S_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
     let mut T_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
     let mut V_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
 
-    let mut mu_sh_offset: usize = 0;
-    let mut nu_sh_offset: usize = 0;
-    let no_shells = basis.no_shells();
-    for sh_idx1 in 0..no_shells {
-        let shell1 = basis.shell(sh_idx1);
+    for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
         for sh_idx2 in 0..=sh_idx1 {
             let shell2 = basis.shell(sh_idx2);
             for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
-                let mu_idx = mu_sh_offset + cgto_idx1;
+                let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
                 for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
-                    let nu_idx = nu_sh_offset + cgto_idx2;
-                    S_matr[(mu_idx, nu_idx)] = if mu_idx == nu_idx {
+                    let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
+
+                    // Overlap
+                    S_matr[(mu, nu)] = if mu == nu {
                         1.0
                     } else {
                         calc_overlap_int_cgto(cgto1, cgto2)
                     };
-                    S_matr[(nu_idx, mu_idx)] = S_matr[(mu_idx, nu_idx)];
-                    T_matr[(mu_idx, nu_idx)] = calc_kinetic_int_cgto(cgto1, cgto2);
-                    T_matr[(nu_idx, mu_idx)] = T_matr[(mu_idx, nu_idx)];
-                    V_matr[(mu_idx, nu_idx)] = calc_pot_int_cgto(cgto1, cgto2, mol);
-                    V_matr[(nu_idx, mu_idx)] = V_matr[(mu_idx, nu_idx)];
+                    S_matr[(nu, mu)] = S_matr[(mu, nu)];
+
+                    // Kinetic
+                    T_matr[(mu, nu)] = calc_kinetic_int_cgto(cgto1, cgto2);
+                    T_matr[(nu, mu)] = T_matr[(mu, nu)];
+
+                    // Potential energy
+                    V_matr[(mu, nu)] = calc_pot_int_cgto(cgto1, cgto2, mol);
+                    V_matr[(nu, mu)] = V_matr[(mu, nu)];
                 }
             }
-            nu_sh_offset += basis.shell_len(sh_idx2);
         }
-        nu_sh_offset = 0;
-        mu_sh_offset += basis.shell_len(sh_idx1);
     }
+
+    //////////////////////////////////////////////
+    // 2nd version: working, but trying to use sh_len_offsets
+    //////////////////////////////////////////////
+    // let mut mu_sh_offset: usize = 0;
+    // let mut nu_sh_offset: usize = 0;
+    // let no_shells = basis.no_shells();
+    // for sh_idx1 in 0..no_shells {
+    //     let shell1 = basis.shell(sh_idx1);
+    //     for sh_idx2 in 0..=sh_idx1 {
+    //         let shell2 = basis.shell(sh_idx2);
+    //         for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
+    //             let mu_idx = mu_sh_offset + cgto_idx1;
+    //             for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
+    //                 let nu_idx = nu_sh_offset + cgto_idx2;
+    //                 S_matr[(mu_idx, nu_idx)] = if mu_idx == nu_idx {
+    //                     1.0
+    //                 } else {
+    //                     calc_overlap_int_cgto(cgto1, cgto2)
+    //                 };
+    //                 S_matr[(nu_idx, mu_idx)] = S_matr[(mu_idx, nu_idx)];
+    //                 T_matr[(mu_idx, nu_idx)] = calc_kinetic_int_cgto(cgto1, cgto2);
+    //                 T_matr[(nu_idx, mu_idx)] = T_matr[(mu_idx, nu_idx)];
+    //                 V_matr[(mu_idx, nu_idx)] = calc_pot_int_cgto(cgto1, cgto2, mol);
+    //                 V_matr[(nu_idx, mu_idx)] = V_matr[(mu_idx, nu_idx)];
+    //             }
+    //         }
+    //         nu_sh_offset += basis.shell_len(sh_idx2);
+    //     }
+    //     nu_sh_offset = 0;
+    //     mu_sh_offset += basis.shell_len(sh_idx1);
+    // }
     //
 
     /////////////////////////////////
@@ -85,24 +114,9 @@ pub fn calc_1e_int_matrs(
     //     mu_sh_offset += shell1.shell_len();
     // }
 
-    (S_matr, T_matr, V_matr)
+    // Return ovelap and core hamiltonian (T + V)
+    (S_matr, T_matr + V_matr)
 }
-
-// fn process_shells(basis: &BasisSet, no_shells: usize) {
-//     for sh_idx1 in 0..no_shells {
-//         let shell1 = basis.shell(sh_idx1);
-//         process_shell_pairs(basis, shell1, sh_idx1, no_shells);
-//     }
-// }
-//
-// #[inline]
-// fn process_shell_pairs(basis: &BasisSet, shell1: &Shell, sh_idx1: usize, no_shells: usize) {
-//     for sh_idx2 in 0..=sh_idx1 {
-//         let shell2 = basis.shell(sh_idx2);
-//         // Further processing
-//     }
-// }
-
 
 #[inline(always)]
 pub fn calc_cmp_idx(idx1: usize, idx2: usize) -> usize {
@@ -113,76 +127,269 @@ pub fn calc_cmp_idx(idx1: usize, idx2: usize) -> usize {
     }
 }
 
-pub fn calc_2e_int_matr(basis: &BasisSet) -> ERI_Arr1 {
-    let mut eri = ERI_Arr1::new(basis.no_bf());
-
-    let (mut mu_sh_offset, mut nu_sh_offset, mut lambda_sh_offset, mut sigma_sh_offset) =
-        (0, 0, 0, 0);
+pub fn calc_2e_int_matr(basis: &BasisSet) -> EriArr1 {
+    let mut eri = EriArr1::new(basis.no_bf());
     let no_shells = basis.no_shells();
 
-    // process_shells(basis, no_shells);
-
-
-    for sh_idx1 in 0..no_shells {
-        let shell1 = basis.shell(sh_idx1);
+    for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
         for sh_idx2 in 0..=sh_idx1 {
             let shell2 = basis.shell(sh_idx2);
             for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
-                let mu_idx = mu_sh_offset + cgto_idx1;
+                let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
                 for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
-                    let nu_idx = nu_sh_offset + cgto_idx2;
-                    if mu_idx >= nu_idx {
-                        let mu_nu = calc_cmp_idx(mu_idx, nu_idx);
+                    let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
+
+                    if mu >= nu {
+                        let munu = calc_cmp_idx(mu, nu);
+
                         for sh_idx3 in 0..no_shells {
-                            let shell3 = basis.shell(sh_idx1);
+                            let shell3 = basis.shell(sh_idx3);
+
                             for sh_idx4 in 0..=sh_idx3 {
                                 let shell4 = basis.shell(sh_idx4);
+
                                 for (cgto_idx3, cgto3) in shell3.cgto_iter().enumerate() {
-                                    let lambda_idx = lambda_sh_offset + cgto_idx3;
+                                    let lambda = basis.sh_len_offset(sh_idx3) + cgto_idx3;
+
                                     for (cgto_idx4, cgto4) in shell4.cgto_iter().enumerate() {
-                                        let sigma_idx = sigma_sh_offset + cgto_idx4;
-                                        if lambda_idx >= sigma_idx {
-                                            let lambda_sigma = calc_cmp_idx(lambda_idx, sigma_idx);
-                                            if mu_nu >= lambda_sigma {
-                                                let cmp_idx = calc_cmp_idx(mu_nu, lambda_sigma);
-                                                eri[cmp_idx] = calc_ERI_int_cgto(cgto1, cgto2, cgto3, cgto4);
+                                        let sigma = basis.sh_len_offset(sh_idx4) + cgto_idx4;
+
+                                        if lambda >= sigma {
+                                            let lambsig = calc_cmp_idx(lambda, sigma);
+                                            if munu >= lambsig {
+                                                let cmp_idx = calc_cmp_idx(munu, lambsig);
+                                                eri[cmp_idx] =
+                                                    calc_ERI_int_cgto(cgto1, cgto2, cgto3, cgto4);
+                                                // println!("{}: {}", cmp_idx, eri[cmp_idx]);
                                             } else {
                                                 continue;
                                             }
                                         }
                                     }
                                 }
-                                sigma_sh_offset += basis.shell_len(sh_idx4);
                             }
-                            sigma_sh_offset = 0;
-                            lambda_sh_offset += basis.shell_len(sh_idx3);
                         }
                     } else {
                         continue;
                     }
                 }
             }
-            nu_sh_offset += basis.shell_len(sh_idx2);
         }
-        nu_sh_offset = 0;
-        mu_sh_offset += basis.shell_len(sh_idx1);
     }
 
     eri
 }
 
 /// This is the main RHF SCF function to be called and run the RHF SCF calculation
-pub(crate) fn rhf_scf_normal(calculation_settings: CalcSettings, max_scf_iter: usize) {
-    for scf_iter in 0..max_scf_iter {
-        println!("SCF Iteration: {}", scf_iter);
+/// ## Options:
+/// - DIIS
+/// - direct vs. indirect SCF
+#[allow(unused)]
+pub(crate) fn rhf_scf_normal(calc_sett: CalcSettings, basis: &BasisSet, mol: &Molecule) -> SCF {
+    // TODO:
+    // - [ ] Print header for RHF SCF
+    // - [ ] Print settings
+
+    let mut scf = SCF::default();
+    let V_nuc = mol.calc_core_potential();
+    let (S_matr, H_core) = calc_1e_int_matrs(basis, mol);
+
+    let mut eri = EriArr1::new(0);
+    if !calc_sett.use_direct_scf {
+        eri = calc_2e_int_matr(basis);
     }
-    todo!();
+
+    let S_matr_inv_sqrt = inv_ssqrt(S_matr, UPLO::Upper);
+
+    // Init matrices for SCF loop
+    let mut C_matr_AO;
+    let mut C_matr_MO;
+    let mut orb_ener;
+    let mut E_scf_prev = 0.0;
+
+    let mut P_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
+    let mut P_matr_old = P_matr.clone();
+    let mut F_matr = H_core.clone();
+    let mut F_matr_pr;
+
+    // Print SCF iteration Header
+    println!(
+        "{:>3} {:^20} {:^20} {:^20} {:^20} {:^20}",
+        "Iter", "E_scf", "E_tot", "RMS(P)", "Delta(E)", "FPS - SPF"
+    );
+    for scf_iter in 0..calc_sett.max_scf_iter {
+        if scf_iter == 0 {
+            F_matr_pr = S_matr_inv_sqrt.dot(&F_matr).dot(&S_matr_inv_sqrt);
+            // println!("F_matr_pr:\n {}", &F_matr_pr);
+
+            (orb_ener, C_matr_MO) = F_matr_pr.eigh(UPLO::Upper).unwrap();
+            C_matr_AO = S_matr_inv_sqrt.dot(&C_matr_MO);
+
+            calc_P_matr(&mut P_matr, &C_matr_AO, basis.no_occ());
+        } else {
+            if !calc_sett.use_direct_scf {
+                calc_F_matr_indir_scf(&mut F_matr, &H_core, &P_matr, &eri);
+            } else {
+                todo!();
+            }
+            let E_scf_curr = calc_E_scf(&P_matr, &H_core, &F_matr);
+            scf.E_tot_conv = E_scf_curr + V_nuc;
+
+            F_matr_pr = S_matr_inv_sqrt.dot(&F_matr).dot(&S_matr_inv_sqrt);
+
+            if calc_sett.use_diis {
+                todo!();
+            }
+
+            (orb_ener, C_matr_MO) = F_matr_pr.eigh(UPLO::Upper).unwrap();
+            C_matr_AO = S_matr_inv_sqrt.dot(&C_matr_MO);
+
+            let rms_p_val = calc_rms_2_matr(&P_matr, &P_matr_old.clone());
+            let delta_E = E_scf_curr - E_scf_prev;
+
+            // SCF output
+            println!(
+                "{:>3} {:>20.12} {:>20.12} {:>20.12} {:>20.12}",
+                scf_iter, E_scf_curr, scf.E_tot_conv, rms_p_val, delta_E
+            );
+
+            // TODO! do not use rms_p_val for conv, but rather the commutator FPS - SPF =! 0
+            if (delta_E.abs() < calc_sett.e_diff_thrsh) && (rms_p_val < calc_sett.commu_conv_thrsh)
+            {
+                scf.tot_scf_iter = scf_iter;
+                scf.C_matr_conv = C_matr_AO.clone();
+                scf.P_matr_conv = P_matr.clone();
+                scf.orb_energies_conv = orb_ener.clone();
+                println!("SCF CONVERGED!");
+                println!("Total SCF iterations: {}", scf.tot_scf_iter);
+                break;
+            }
+
+            E_scf_prev = E_scf_curr;
+            P_matr_old = P_matr.clone();
+            calc_P_matr(&mut P_matr, &C_matr_AO, basis.no_occ());
+        }
+    }
+    scf
+}
+
+fn calc_P_matr(P_matr: &mut Array2<f64>, C_matr: &Array2<f64>, no_occ: usize) {
+    let C_occ = C_matr.slice(s![.., ..no_occ]);
+    P_matr.assign(&(2.0 * C_occ.dot(&C_occ.t())));
+}
+
+fn calc_F_matr_indir_scf(
+    F_matr: &mut Array2<f64>,
+    H_core: &Array2<f64>,
+    P_matr: &Array2<f64>,
+    eri: &EriArr1,
+) {
+    F_matr.assign(H_core);
+    let no_bf = F_matr.nrows();
+
+    for mu in 0..no_bf {
+        for nu in 0..=mu {
+            for lambda in 0..no_bf {
+                for sigma in 0..no_bf {
+                    F_matr[(mu, nu)] += P_matr[(lambda, sigma)]
+                        * (eri[(mu, nu, lambda, sigma)] - 0.5 * eri[(mu, sigma, lambda, nu)]);
+                }
+            }
+            F_matr[(nu, mu)] = F_matr[(mu, nu)];
+        }
+    }
+}
+
+fn calc_E_scf(P_matr: &Array2<f64>, H_core: &Array2<f64>, F_matr: &Array2<f64>) -> f64 {
+    Zip::from(P_matr)
+        .and(H_core)
+        .and(F_matr)
+        .into_par_iter()
+        .map(|(p, h, f)| *p * (*h + *f))
+        .sum::<f64>()
+        * 0.5
+}
+
+fn calc_rms_2_matr(matr1: &Array2<f64>, matr2: &Array2<f64>) -> f64 {
+    Zip::from(matr1)
+        .and(matr2)
+        .into_par_iter()
+        .map(|(val1, val2)| (val1 - val2).powi(2))
+        .sum::<f64>()
+        .sqrt()
+}
+
+fn inv_ssqrt(arr2: Array2<f64>, uplo: UPLO) -> Array2<f64> {
+    let (e, v) = arr2.eigh(uplo).unwrap();
+    let e_inv_sqrt = Array1::from_iter(e.iter().map(|x| x.powf(-0.5)));
+    let e_inv_sqrt_diag = Array::from_diag(&e_inv_sqrt);
+    let result = v.dot(&e_inv_sqrt_diag).dot(&v.t());
+    result
+}
+
+#[inline(always)]
+fn calc_DIIS_error_matr(
+    F_pr_matr: &Array2<f64>,
+    P_matr: &Array2<f64>,
+    S_matr: &Array2<f64>,
+    // S_matr_inv_sqrt: &Array2<f64>,
+) -> Array2<f64> {
+    F_pr_matr.dot(P_matr).dot(S_matr) - S_matr.dot(P_matr).dot(F_pr_matr)
+}
+
+// TODO: fix this function
+#[inline]
+fn run_DIIS(error_set_len: usize) {
+    // let no_cgtos =
+
+    // let mut B_matr =
+    let mut sol_vec = Array1::<f64>::zeros(error_set_len + 1);
+    sol_vec[error_set_len] = -1.0;
+
+    // // * ACTUALLY: Frobenius inner product of matrices (B_ij = error_matr_i * error_matr_j)
+    // // * OR: flatten error_matr and do dot product
+    // Zip::indexed(&mut B_matr).par_for_each(|(idx1, idx2), b_val| {
+    //     if idx1 >= idx2 {
+    //         *b_val = Zip::from(&self.error_matr_set[idx1])
+    //             .and(&self.error_matr_set[idx2])
+    //             .into_par_iter()
+    //             .map(|(error_matr_val1, error_matr_val2)| error_matr_val1 * error_matr_val2)
+    //             .sum();
+    //     }
+    // });
+
+    //
+    // for i in 0..error_set_len - 1 {
+    //     let slice = B_matr.slice(s![i + 1..error_set_len, i]).to_shared();
+    //     B_matr.slice_mut(s![i, i + 1..error_set_len]).assign(&slice);
+    // }
+    //
+    // // * Add langrange multiplier to B_matr_extended
+    // let new_axis_extension_1 = Array2::from_elem((error_set_len, 1), -1.0_f64);
+    // let mut new_axis_extension_2 = Array2::from_elem((1, error_set_len + 1), -1.0_f64);
+    // new_axis_extension_2[[0, error_set_len]] = 0.0_f64;
+    // let mut B_matr_extended = concatenate![Axis(1), B_matr, new_axis_extension_1];
+    // B_matr_extended = concatenate![Axis(0), B_matr_extended, new_axis_extension_2];
+    //
+    // // * Calculate the coefficients c_vec
+    // let c_vec = B_matr_extended.solveh(&sol_vec).unwrap();
+    // if is_debug {
+    //     println!("c_vec: {:>8.5}", c_vec);
+    // }
+    //
+    // // * Calculate the new DIIS Fock matrix for new D_matr
+    // let mut _F_matr_DIIS = Array2::<f64>::zeros((no_cgtos, no_cgtos));
+    // for i in 0..error_set_len {
+    //     _F_matr_DIIS = _F_matr_DIIS + c_vec[i] * &self.F_matr_set[i];
+    // }
+    //
+    // _F_matr_DIIS
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::molecule::Molecule;
+    use crate::{calc_type::DiisSettings, molecule::Molecule};
 
     #[test]
     fn test_calc_1e_int_matrs() {
@@ -190,12 +397,11 @@ mod tests {
         let mol = Molecule::new("data/xyz/water90.xyz", 0);
         let basis = BasisSet::new("STO-3G", &mol);
 
-        let (S_matr, T_matr, V_matr) = calc_1e_int_matrs(&basis, &mol);
+        let (S_matr, H_core) = calc_1e_int_matrs(&basis, &mol);
         println!("{}", S_matr);
-        println!("{}", T_matr);
-        println!("{}", V_matr);
+        println!("{}", H_core);
     }
-    
+
     #[test]
     fn test_calc_2e_int_matr() {
         println!("Test calc_2e_int_matr");
@@ -203,9 +409,29 @@ mod tests {
         let basis = BasisSet::new("STO-3G", &mol);
 
         let eri = calc_2e_int_matr(&basis);
-        // println!("{:?}", eri);
-        for (idx, val) in eri.eri_arr.iter().enumerate() {
-            println!("{}: {}", idx, val);
-        }
+        println!("{:?}", eri);
+        // for (idx, val) in eri.eri_arr.iter().enumerate() {
+        //     println!("{}: {}", idx, val);
+        // }
+    }
+
+    #[test]
+    fn test_rhf_indir_no_diis() {
+        let mol = Molecule::new("data/xyz/water90.xyz", 0);
+        let basis = BasisSet::new("STO-3G", &mol);
+        let calc_sett = CalcSettings {
+            max_scf_iter: 100,
+            e_diff_thrsh: 1e-8,
+            commu_conv_thrsh: 1e-8,
+            use_diis: false,
+            use_direct_scf: false,
+            diis_sett: DiisSettings {
+                diis_start: 0,
+                diis_end: 0,
+                diis_max: 0,
+            },
+        };
+
+        let _scf = rhf_scf_normal(calc_sett, &basis, &mol);
     }
 }
