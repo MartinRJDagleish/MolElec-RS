@@ -196,11 +196,8 @@ pub(crate) fn rhf_scf_normal(
     basis: &BasisSet,
     mol: &Molecule,
 ) -> SCF {
-    // TODO:
-    // - [ ] Print settings
-    // - [ ] Print initial header
     print_scf_header_and_settings(&calc_sett);
-    const show_all_conv_crit: bool = false;
+    const SHOW_ALL_CONV_CRIT: bool = false;
 
     let mut is_scf_conv = false;
     let mut scf = SCF::default();
@@ -247,7 +244,7 @@ pub(crate) fn rhf_scf_normal(
 
 
     // Print SCF iteration Header
-    match show_all_conv_crit {
+    match SHOW_ALL_CONV_CRIT {
         true => {
             println!(
                 "{:>3} {:^20} {:^20} {:^20} {:^20} {:^20}",
@@ -299,7 +296,7 @@ pub(crate) fn rhf_scf_normal(
             let delta_E = E_scf_curr - E_scf_prev;
             let rms_comm_val =
                 (fps_comm.par_iter().map(|x| x * x).sum::<f64>() / fps_comm.len() as f64).sqrt();
-            if show_all_conv_crit {
+            if SHOW_ALL_CONV_CRIT {
                 let rms_p_val = calc_rms_2_matr(&P_matr, &P_matr_old.clone());
                 println!(
                     "{:>3} {:>20.12} {:>20.12} {:>20.12} {:>20.12} {:>20.12}",

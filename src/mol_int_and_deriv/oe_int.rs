@@ -1,5 +1,5 @@
 use ndarray::{array, Array1};
-use std::f64::consts::PI;
+use std::f64::consts::{PI, TAU};
 use std::vec;
 
 use crate::basisset::{CGTO, PGTO};
@@ -12,7 +12,6 @@ use crate::molecule::{
 
 lazy_static! {
     pub static ref PI_FAC_OVERL: f64 = PI * PI.sqrt();
-    pub static ref TWO_PI: f64 = 2.0 * PI;
 }
 
 ///////////////////////////////////////
@@ -177,7 +176,7 @@ pub fn calc_pot_int_cgto(cgto1: &CGTO, cgto2: &CGTO, mol: &Molecule) -> f64 {
                     * pgto1.pgto_coeff()
                     * pgto2.pgto_coeff()
                     * R_recurr_val
-                    * *TWO_PI
+                    * TAU
                     / (pgto1.alpha() + pgto2.alpha());
             }
         }
@@ -338,14 +337,4 @@ mod tests {
 
         assert_relative_eq!(pot_val, POT_VAL_REF_2, epsilon = 1e-8);
     }
-    
-    // #[test]
-    // fn test_calc_eri_cgto_test1() {
-    //     let atom = Atom::new(0.0, 0.0, 0.0, 8, crate::molecule::PseElemSym::O);
-    //     let (cgto1, cgto2) = init_two_same_cgtos(&atom);
-    //     let (cgto3, cgto4) = init_two_same_cgtos(&atom);
-    //
-    //     let eri_val = calc_ERI_int_cgto(&cgto1, &cgto2, &cgto3, &cgto4);
-    //     println!("ERI val: {}", eri_val);
-    // }
 }

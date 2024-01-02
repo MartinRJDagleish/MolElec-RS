@@ -77,27 +77,6 @@ impl IndexMut<usize> for Atom {
     }
 }
 
-// impl Sub for Atom {
-//     type Output = f64;
-//     fn sub(self, other: Self) -> Self::Output {
-//         let dx = self.x - other.x;
-//         let dy = self.y - other.y;
-//         let dz = self.z - other.z;
-//         (dx * dx + dy * dy + dz * dz).sqrt()
-//     }
-// }
-//
-// impl<'a> Sub for &'a Atom {
-//     type Output = f64;
-//
-//     fn sub(self, other: Self) -> Self::Output {
-//         let dx = self.x - other.x;
-//         let dy = self.y - other.y;
-//         let dz = self.z - other.z;
-//         (dx * dx + dy * dy + dz * dz).sqrt()
-//     }
-// }
-
 impl Atom {
     pub(crate) fn new(x_inp: f64, y_inp: f64, z_inp: f64, z_val: u32, pse_sym: PseElemSym) -> Self {
         let mass = ATOMIC_MASSES_IN_AMU[z_val as usize];

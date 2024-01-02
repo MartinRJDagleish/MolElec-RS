@@ -1,4 +1,5 @@
-#![allow(dead_code, clippy::upper_case_acronyms, non_snake_case)]
+// #![allow(dead_code, clippy::upper_case_acronyms, non_snake_case)]
+#![allow(clippy::upper_case_acronyms, non_snake_case)]
 #[macro_use]
 extern crate lazy_static;
 extern crate ndarray;
@@ -26,20 +27,14 @@ fn main() {
     print_logo();
 
     exec_times.start("Molecule");
-    let mol = Molecule::new("data/xyz/furan.xyz", 0);
-    // let mol = Molecule::new("data/xyz/water90.xyz", 0);
+    let mol = Molecule::new("data/xyz/water90.xyz", 0);
+    // let mol = Molecule::new("data/xyz/furan.xyz", 0);
     // let mol = Molecule::new("data/xyz/calicheamicin_tinker_std.xtbopt.xyz", 0);
     // println!("Molecule: {:?}", _mol);
     exec_times.stop("Molecule");
 
     exec_times.start("BasisSet");
     let basis = BasisSet::new("STO-3G", &mol);
-    // println!("BasisSet: {:?}", _basis);
-    // println!("Molecule: {:?}", _basis);
-    // println!("\n\n");
-    // for shell in basis.shell_iter() {
-    //     println!("Shell: {:?}\n", shell);
-    // }
     exec_times.stop("BasisSet");
 
     //##################################

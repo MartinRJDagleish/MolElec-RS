@@ -157,13 +157,20 @@ impl<'a> Shell<'a> {
                 );
                 pgtos.push(pgto);
             }
-            let cgto = CGTO {
-                pgto_vec: pgtos,
-                no_pgtos: no_prim,
-                ang_mom_type: curr_shell_def.ang_mom_char(),
-                ang_mom_vec: ang_mom_trip,
-                centre_pos: atom,
-            };
+            // let cgto = CGTO {
+            //     pgto_vec: pgtos,
+            //     no_pgtos: no_prim,
+            //     ang_mom_type: curr_shell_def.ang_mom_char(),
+            //     ang_mom_vec: ang_mom_trip,
+            //     centre_pos: atom,
+            // };
+            let cgto = CGTO::new(
+                pgtos,
+                no_prim,
+                curr_shell_def.ang_mom_char(),
+                ang_mom_trip,
+                atom,
+            );
 
             cgtos.push(cgto);
         }
@@ -214,10 +221,12 @@ impl<'a> CGTO<'a> {
     fn calc_cart_norm_const_cgto(&mut self) {
         lazy_static! {
             static ref PI_3_2: f64 = PI.powf(1.5);
+            static ref POWERS_OF_2: Vec<f64> = (0..=10).map(|x| 2.0_f64.powi(x)).collect();
         }
+
         let mut norm_const_cgto = 0.0_f64;
         let L_tot = self.ang_mom_type as u32;
-        let pi_factor = *PI_3_2 / (2_i32.pow(L_tot) as f64)
+        let pi_factor = *PI_3_2 / (POWERS_OF_2[L_tot as usize])
             * (self.ang_mom_vec.map(|x| double_fac(2 * x - 1)))
                 .iter()
                 .product::<i32>() as f64;
@@ -313,12 +322,12 @@ mod tests {
         let test_basis = BasisSet::new("STO-3G", &mol);
         println!("{:?}", test_basis);
     }
-    
+
     #[test]
     fn test_sh_len_offsets() {
         let mol = Molecule::new("data/xyz/water90.xyz", 0);
         let test_basis = BasisSet::new("STO-3G", &mol);
-        
+
         println!("sh_len_offsets: {:?}", test_basis.sh_len_offsets);
         for shell in test_basis.shells.iter() {
             println!("Shell: {:?}\n", shell);
