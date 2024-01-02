@@ -260,7 +260,7 @@ pub(crate) fn rhf_scf_normal(
             F_matr_pr = S_matr_inv_sqrt.dot(&F_matr).dot(&S_matr_inv_sqrt);
 
             if calc_sett.use_diis {
-                let repl_idx = scf_iter % calc_sett.diis_sett.diis_max;
+                let repl_idx = scf_iter % calc_sett.diis_sett.diis_max - 1; // always start with 0
                 diis.as_mut().unwrap().push_to_ring_buf(
                     &F_matr_pr,
                     &DIIS::calc_FPS_comm(&F_matr_pr, &P_matr, &S_matr),
@@ -268,13 +268,9 @@ pub(crate) fn rhf_scf_normal(
                 );
 
                 if scf_iter >= calc_sett.diis_sett.diis_min {
-                    let min_val = std::cmp::min(calc_sett.diis_sett.diis_max, scf_iter);
-                    F_matr_pr.assign(&diis.as_ref().unwrap().run_DIIS(min_val));
-                    // F_matr_pr.assign(&run_DIIS(
-                    //     min_val,
-                    //     &diis.take().unwrap().F_matr_pr_ring_buf,
-                    //     &diis.take().unwrap().err_matr_pr_ring_buf,
-                    // ));
+                    println!("*** Using DIIS ***");
+                    let err_set_len = std::cmp::min(calc_sett.diis_sett.diis_max, scf_iter);
+                    F_matr_pr.assign(&diis.as_ref().unwrap().run_DIIS(err_set_len));
                 }
             }
 

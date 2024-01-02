@@ -2,6 +2,7 @@
 use crate::calc_type::rhf::calc_cmp_idx;
 use ndarray::parallel::prelude::*;
 use ndarray::{Array1, Array2, Zip};
+use ndarray_linalg::SolveH;
 use std::ops::{Index, IndexMut};
 
 pub(crate) mod rhf;
@@ -117,26 +118,16 @@ impl DIIS {
         //     let slice = B_matr.slice(s![i + 1..error_set_len, i]).to_shared();
         //     B_matr.slice_mut(s![i, i + 1..error_set_len]).assign(&slice);
         // }
-        //
-        // // * Add langrange multiplier to B_matr_extended
-        // let new_axis_extension_1 = Array2::from_elem((error_set_len, 1), -1.0_f64);
-        // let mut new_axis_extension_2 = Array2::from_elem((1, error_set_len + 1), -1.0_f64);
-        // new_axis_extension_2[[0, error_set_len]] = 0.0_f64;
-        // let mut B_matr_extended = concatenate![Axis(1), B_matr, new_axis_extension_1];
-        // B_matr_extended = concatenate![Axis(0), B_matr_extended, new_axis_extension_2];
-        //
+        
         // // * Calculate the coefficients c_vec
-        // let c_vec = B_matr_extended.solveh(&sol_vec).unwrap();
-        // if is_debug {
-        //     println!("c_vec: {:>8.5}", c_vec);
-        // }
+        let c_vec = B_matr.solveh(&sol_vec).unwrap();
         //
         // // * Calculate the new DIIS Fock matrix for new D_matr
         let no_cgtos = self.err_matr_pr_ring_buf[0].shape()[0];
         let mut _F_matr_DIIS = Array2::<f64>::zeros((no_cgtos, no_cgtos));
-        // for i in 0..error_set_len {
-        //     _F_matr_DIIS = _F_matr_DIIS + c_vec[i] * F_matr_set[i];
-        // }
+        for i in 0..error_set_len {
+            _F_matr_DIIS = _F_matr_DIIS + c_vec[i] * &self.F_matr_pr_ring_buf[i];
+        }
 
         _F_matr_DIIS
     }
