@@ -65,6 +65,28 @@ pub(crate) fn print_header_for_section(inp_str: &str) {
     println!("\n{}\n{}\n{}\n", HEADER_STR, centered_str, HEADER_STR);
 }
 
+/// ## Format a floating point number in scientific notation 
+/// - `width` controls the amount of left padded spaces
+/// - `precision` is the amount of decimals
+/// - `exp_pad` controls the amount of left padded 0s
+///
+/// Source: https://stackoverflow.com/questions/65264069/alignment-of-floating-point-numbers-printed-in-scientific-notation
+///
+pub(crate) fn fmt_f64(num: f64, width: usize, precision: usize, exp_pad: usize) -> String {
+    let mut num = format!("{:.precision$e}", num, precision = precision);
+    // Safe to `unwrap` as `num` is guaranteed to contain `'e'`
+    let exp = num.split_off(num.find('e').unwrap());
+
+    let (sign, exp) = if exp.starts_with("e-") {
+        ('-', &exp[2..])
+    } else {
+        ('+', &exp[1..])
+    };
+    num.push_str(&format!("e{}{:0>pad$}", sign, exp, pad = exp_pad));
+
+    format!("{:>width$}", num, width = width)
+}
+
 pub struct ExecTimes {
     timings_map: HashMap<String, [Instant; 2]>,
 }

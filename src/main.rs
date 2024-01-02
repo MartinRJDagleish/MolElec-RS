@@ -52,7 +52,6 @@ fn main() {
     let calc_sett = CalcSettings {
         max_scf_iter: 100,
         e_diff_thrsh: 1e-10,
-        rms_p_matr_thrsh: 1e-10,
         commu_conv_thrsh: 1e-10,
         use_diis: true,
         use_direct_scf: false,

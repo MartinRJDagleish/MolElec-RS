@@ -16,7 +16,6 @@ pub(crate) enum CalcType {
 pub struct CalcSettings {
     pub max_scf_iter: usize,
     pub e_diff_thrsh: f64,
-    pub rms_p_matr_thrsh: f64,
     pub commu_conv_thrsh: f64,
     pub use_diis: bool,
     pub use_direct_scf: bool,
@@ -80,8 +79,6 @@ impl DIIS {
         self.err_matr_pr_ring_buf[idx].assign(err_matr);
     }
 
-    // TODO: fix this function
-    #[inline]
     fn run_DIIS(&self, error_set_len: usize) -> Array2<f64> {
         let mut B_matr = Array2::<f64>::zeros((error_set_len + 1, error_set_len + 1));
         let mut sol_vec = Array1::<f64>::zeros(error_set_len + 1);
@@ -92,37 +89,18 @@ impl DIIS {
                 B_matr[(i, j)] = Zip::from(&self.err_matr_pr_ring_buf[i])
                     .and(&self.err_matr_pr_ring_buf[j])
                     .into_par_iter()
-                    .map(|(err_mat1, err_mat2)| err_mat1 * err_mat2)
-                    .sum();
+                    .map(|(err_mat1, err_mat2)| *err_mat1 * *err_mat2)
+                    .sum::<f64>();
                 B_matr[(j, i)] = B_matr[(i, j)];
             }
             B_matr[(i, error_set_len)] = -1.0;
             B_matr[(error_set_len, i)] = -1.0;
         }
 
-        println!("B_matr: {:>8.5}", B_matr);
-
-        // * ACTUALLY: Frobenius inner product of matrices (B_ij = error_matr_i * error_matr_j)
-        // * OR: flatten error_matr and do dot product
-        // Zip::indexed(&mut B_matr).par_for_each(|(idx1, idx2), b_val| {
-        //     if idx1 >= idx2 {
-        //         *b_val = Zip::from(self.err_matr_pr_ring_buf[idx1])
-        //             .and(self.err_matr_pr_ring_buf[idx2])
-        //             .into_par_iter()
-        //             .map(|(err_mat1, err_mat2)| err_mat1 * err_mat2)
-        //             .sum();
-        //     }
-        // });
-
-        // for i in 0..error_set_len - 1 {
-        //     let slice = B_matr.slice(s![i + 1..error_set_len, i]).to_shared();
-        //     B_matr.slice_mut(s![i, i + 1..error_set_len]).assign(&slice);
-        // }
-        
-        // // * Calculate the coefficients c_vec
+        // * Calculate the coefficients c_vec
         let c_vec = B_matr.solveh(&sol_vec).unwrap();
-        //
-        // // * Calculate the new DIIS Fock matrix for new D_matr
+        
+        // * Calculate the new DIIS Fock matrix for new D_matr
         let no_cgtos = self.err_matr_pr_ring_buf[0].shape()[0];
         let mut _F_matr_DIIS = Array2::<f64>::zeros((no_cgtos, no_cgtos));
         for i in 0..error_set_len {

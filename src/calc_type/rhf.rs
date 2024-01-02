@@ -5,7 +5,7 @@ use crate::mol_int_and_deriv::{
     te_int::calc_ERI_int_cgto,
 };
 use crate::molecule::Molecule;
-use crate::print_utils::ExecTimes;
+use crate::print_utils::{fmt_f64, ExecTimes};
 use ndarray::parallel::prelude::*;
 use ndarray::{s, Array, Array1, Array2, Zip};
 use ndarray_linalg::{Eigh, UPLO};
@@ -195,6 +195,7 @@ pub(crate) fn rhf_scf_normal(
     // TODO:
     // - [ ] Print settings
     // - [ ] Print initial header
+    const show_all_conv_crit: bool = false;
 
     let mut is_scf_conv = false;
     let mut scf = SCF::default();
@@ -239,10 +240,22 @@ pub(crate) fn rhf_scf_normal(
     let mut F_matr_pr;
 
     // Print SCF iteration Header
-    println!(
-        "{:>3} {:^20} {:^20} {:^20} {:^20} {:^20}",
-        "Iter", "E_scf", "E_tot", "RMS(P)", "Delta(E)", "RMS(|FPS - SPF|)"
-    );
+    match show_all_conv_crit {
+        true => {
+            println!(
+                "{:>3} {:^20} {:^20} {:^20} {:^20} {:^20}",
+                "Iter", "E_scf", "E_tot", "RMS(P)", "ΔE", "RMS(|FPS - SPF|)"
+            );
+        }
+        false => {
+            println!(
+                "{:>3} {:^20} {:^20} {:^20} {:^20}",
+                "Iter", "E_scf", "E_tot", "ΔE", "RMS(|FPS - SPF|)"
+            );
+        }
+    }
+
+    let mut diis_str = "";
     for scf_iter in 0..=calc_sett.max_scf_iter {
         if scf_iter == 0 {
             F_matr_pr = S_matr_inv_sqrt.dot(&F_matr).dot(&S_matr_inv_sqrt);
@@ -256,40 +269,51 @@ pub(crate) fn rhf_scf_normal(
             calc_new_F_matr(&mut F_matr, &H_core, &P_matr, &eri);
             let E_scf_curr = calc_E_scf(&P_matr, &H_core, &F_matr);
             scf.E_tot_conv = E_scf_curr + V_nuc;
+            let fps_comm = DIIS::calc_FPS_comm(&F_matr, &P_matr, &S_matr);
 
             F_matr_pr = S_matr_inv_sqrt.dot(&F_matr).dot(&S_matr_inv_sqrt);
 
             if calc_sett.use_diis {
-                let repl_idx = scf_iter % calc_sett.diis_sett.diis_max - 1; // always start with 0
-                diis.as_mut().unwrap().push_to_ring_buf(
-                    &F_matr_pr,
-                    &DIIS::calc_FPS_comm(&F_matr_pr, &P_matr, &S_matr),
-                    repl_idx,
-                );
+                let repl_idx = (scf_iter - 1) % calc_sett.diis_sett.diis_max; // always start with 0
+                let err_matr = S_matr_inv_sqrt.dot(&fps_comm).dot(&S_matr_inv_sqrt);
+                diis.as_mut()
+                    .unwrap()
+                    .push_to_ring_buf(&F_matr_pr, &err_matr, repl_idx);
 
                 if scf_iter >= calc_sett.diis_sett.diis_min {
-                    println!("*** Using DIIS ***");
+                    // println!("{:^120}", "*** ↓ Using DIIS ↓ ***");
                     let err_set_len = std::cmp::min(calc_sett.diis_sett.diis_max, scf_iter);
-                    F_matr_pr.assign(&diis.as_ref().unwrap().run_DIIS(err_set_len));
+                    F_matr_pr = diis.as_ref().unwrap().run_DIIS(err_set_len);
+                    diis_str = "DIIS";
                 }
             }
 
             (orb_ener, C_matr_MO) = F_matr_pr.eigh(UPLO::Upper).unwrap();
             C_matr_AO = S_matr_inv_sqrt.dot(&C_matr_MO);
 
-            let rms_p_val = calc_rms_2_matr(&P_matr, &P_matr_old.clone());
             let delta_E = E_scf_curr - E_scf_prev;
-            let fps_comm = DIIS::calc_FPS_comm(&F_matr, &P_matr, &S_matr);
             let rms_comm_val =
                 (fps_comm.par_iter().map(|x| x * x).sum::<f64>() / fps_comm.len() as f64).sqrt();
-
-            println!(
-                "{:>3} {:>20.12} {:>20.12} {:>20.12} {:>20.12} {:>20.12}",
-                scf_iter, E_scf_curr, scf.E_tot_conv, rms_p_val, delta_E, rms_comm_val
-            );
+            if show_all_conv_crit {
+                let rms_p_val = calc_rms_2_matr(&P_matr, &P_matr_old.clone());
+                println!(
+                    "{:>3} {:>20.12} {:>20.12} {:>20.12} {:>20.12} {:>20.12}",
+                    scf_iter, E_scf_curr, scf.E_tot_conv, rms_p_val, delta_E, rms_comm_val
+                );
+            } else {
+                println!(
+                    "{:>3} {:>20.12} {:>20.12} {} {} {:>10} ",
+                    scf_iter,
+                    E_scf_curr,
+                    scf.E_tot_conv,
+                    fmt_f64(delta_E, 20, 8, 2),
+                    fmt_f64(rms_comm_val, 20, 8, 2),
+                    diis_str
+                );
+                diis_str = "";
+            }
 
             if (delta_E.abs() < calc_sett.e_diff_thrsh)
-                && (rms_p_val < calc_sett.rms_p_matr_thrsh)
                 && (rms_comm_val < calc_sett.commu_conv_thrsh)
             {
                 scf.tot_scf_iter = scf_iter;
@@ -297,11 +321,11 @@ pub(crate) fn rhf_scf_normal(
                 scf.C_matr_conv = C_matr_AO.clone();
                 scf.P_matr_conv = P_matr.clone();
                 scf.orb_energies_conv = orb_ener.clone();
-                println!("\nSCF CONVERGED!");
+                println!("\nSCF CONVERGED!\n");
                 is_scf_conv = true;
                 break;
             } else if scf_iter == calc_sett.max_scf_iter {
-                println!("\nSCF DID NOT CONVERGE!");
+                println!("\nSCF DID NOT CONVERGE!\n");
                 break;
             }
             E_scf_prev = E_scf_curr;
@@ -422,7 +446,6 @@ mod tests {
         let calc_sett = CalcSettings {
             max_scf_iter: 100,
             e_diff_thrsh: 1e-8,
-            rms_p_matr_thrsh: 1e-8,
             commu_conv_thrsh: 1e-8,
             use_diis: false,
             use_direct_scf: false,
@@ -444,8 +467,7 @@ mod tests {
         let calc_sett = CalcSettings {
             max_scf_iter: 100,
             e_diff_thrsh: 1e-8,
-            rms_p_matr_thrsh: 1e-8,
-            commu_conv_thrsh: 1e-8,
+            commu_conv_thrsh: 1e-6,
             use_diis: true,
             use_direct_scf: false,
             diis_sett: DiisSettings {
