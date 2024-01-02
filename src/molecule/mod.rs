@@ -14,6 +14,7 @@ use std::{
     io::{BufRead, BufReader},
 };
 use strum_macros::EnumString;
+use rayon::prelude::*;
 
 pub(crate) const PSE_ELEM_SYMS_STR: [&str; 119] = [
     "Du", "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S",
@@ -257,6 +258,7 @@ impl Molecule {
         
         //* Convert geom_matr from Angstrom to Bohr (atomic units) */
         const AA_TO_BOHR: f64 = 1.0e-10 / physical_constants::BOHR_RADIUS;
+        // geom_matr.par_mapv_inplace(|x| x * AA_TO_BOHR);
         geom_matr.mapv_inplace(|x| x * AA_TO_BOHR);
 
         //* Create z_vals from atom symbols above */
@@ -281,7 +283,7 @@ impl Molecule {
     }
 
 
-    pub(crate) fn calc_core_potential(&self) -> f64 {
+    pub(crate) fn calc_core_potential_ser(&self) -> f64 {
         let mut core_potential = 0.0;
         let coords = &self.geom.coords_matr;
 
@@ -297,6 +299,22 @@ impl Molecule {
             }
         }
         core_potential
+    }
+
+    pub(crate) fn calc_core_potential_par(&self) -> f64 {
+        let coords = &self.geom.coords_matr;
+    
+        (0..self.no_atoms).into_par_iter().map(|i| {
+            let r_i = coords.slice(s![i, ..]);
+            (i+1..self.no_atoms).into_par_iter().map(|j| {
+                let r_j = coords.slice(s![j, ..]);
+    
+                let r_ij = &r_i - &r_j;
+                let r_ij_norm = r_ij.dot(&r_ij).sqrt();
+    
+                (self.z_vals[i] as f64) * (self.z_vals[j] as f64) / r_ij_norm
+            }).sum::<f64>()
+        }).sum::<f64>()
     }
 
     fn calc_core_potential_der(&self, deriv_atom: &Atom, cc: Cartesian) -> f64 {
@@ -427,7 +445,7 @@ mod tests {
     #[test]
     fn test_calc_core_potential() {
         let test_mol = Molecule::new(WATER_90_FPATH, 0);
-        let core_potential = test_mol.calc_core_potential();
+        let core_potential = test_mol.calc_core_potential_ser();
         println!("core_potential: {}", core_potential);
         assert_relative_eq!(core_potential, 9.209396009090517, epsilon = 1.0e-10);
     }

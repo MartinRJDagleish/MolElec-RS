@@ -36,6 +36,7 @@ dependencies = [
  "ndarray_einsum_beta",
  "openblas-src",
  "physical_constants",
+ "rayon",
  "strum",
  "strum_macros",
 ]

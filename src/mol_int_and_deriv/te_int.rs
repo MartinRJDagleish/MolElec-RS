@@ -45,7 +45,6 @@ pub fn calc_ERI_int_cgto(cgto1: &CGTO, cgto2: &CGTO, cgto3: &CGTO, cgto4: &CGTO)
         cgto3.centre_pos(),
         cgto4.centre_pos(),
     ];
-    //TODO: still wrong calculation
     for pgto1 in cgto1.pgto_iter() {
         for pgto2 in cgto2.pgto_iter() {
             for pgto3 in cgto3.pgto_iter() {

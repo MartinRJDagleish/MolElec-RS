@@ -27,6 +27,7 @@ fn main() {
 
     exec_times.start("Molecule");
     let mol = Molecule::new("data/xyz/water90.xyz", 0);
+    // let mol = Molecule::new("data/xyz/calicheamicin_tinker_std.xtbopt.xyz", 0);
     // println!("Molecule: {:?}", _mol);
     exec_times.stop("Molecule");
 
@@ -51,17 +52,17 @@ fn main() {
     let calc_sett = CalcSettings {
         max_scf_iter: 100,
         e_diff_thrsh: 1e-10,
+        rms_p_matr_thrsh: 1e-10,
         commu_conv_thrsh: 1e-10,
-        use_diis: false,
+        use_diis: true,
         use_direct_scf: false,
         diis_sett: DiisSettings {
-            diis_start: 0,
-            diis_end: 0,
-            diis_max: 0,
+            diis_min: 2,
+            diis_max: 6,
         },
     };
     
-    let _scf = rhf_scf_normal(calc_sett, &basis, &mol);
+    let _scf = rhf_scf_normal(calc_sett, &mut exec_times, &basis, &mol);
     exec_times.stop("RHF noDIIS");
     
 

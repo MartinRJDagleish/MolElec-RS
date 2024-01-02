@@ -1,10 +1,11 @@
 use crate::basisset::BasisSet;
-use crate::calc_type::EriArr1;
+use crate::calc_type::{EriArr1, DIIS};
 use crate::mol_int_and_deriv::{
     oe_int::{calc_kinetic_int_cgto, calc_overlap_int_cgto, calc_pot_int_cgto},
     te_int::calc_ERI_int_cgto,
 };
 use crate::molecule::Molecule;
+use crate::print_utils::ExecTimes;
 use ndarray::parallel::prelude::*;
 use ndarray::{s, Array, Array1, Array2, Zip};
 use ndarray_linalg::{Eigh, UPLO};
@@ -185,20 +186,44 @@ pub fn calc_2e_int_matr(basis: &BasisSet) -> EriArr1 {
 /// - DIIS
 /// - direct vs. indirect SCF
 #[allow(unused)]
-pub(crate) fn rhf_scf_normal(calc_sett: CalcSettings, basis: &BasisSet, mol: &Molecule) -> SCF {
+pub(crate) fn rhf_scf_normal(
+    calc_sett: CalcSettings,
+    exec_times: &mut ExecTimes,
+    basis: &BasisSet,
+    mol: &Molecule,
+) -> SCF {
     // TODO:
-    // - [ ] Print header for RHF SCF
     // - [ ] Print settings
+    // - [ ] Print initial header
 
-    let mut is_conv = false;
+    let mut is_scf_conv = false;
     let mut scf = SCF::default();
-    let V_nuc = mol.calc_core_potential();
+    let mut diis: Option<DIIS>;
+    match calc_sett.use_diis {
+        true => {
+            diis = Some(DIIS::new(
+                &calc_sett.diis_sett,
+                [basis.no_bf(), basis.no_bf()],
+            ));
+        }
+        false => {
+            diis = None;
+        }
+    }
+
+    let V_nuc: f64 = if mol.no_atoms() > 100 {
+        mol.calc_core_potential_par()
+    } else {
+        mol.calc_core_potential_ser()
+    };
+
     let (S_matr, H_core) = calc_1e_int_matrs(basis, mol);
 
-    let mut eri = EriArr1::new(0);
-    if !calc_sett.use_direct_scf {
-        eri = calc_2e_int_matr(basis);
-    }
+    let mut eri: Option<EriArr1> = if calc_sett.use_direct_scf {
+        None
+    } else {
+        Some(calc_2e_int_matr(basis))
+    };
 
     let S_matr_inv_sqrt = inv_ssqrt(&S_matr, UPLO::Upper);
 
@@ -228,18 +253,29 @@ pub(crate) fn rhf_scf_normal(calc_sett: CalcSettings, basis: &BasisSet, mol: &Mo
 
             calc_P_matr(&mut P_matr, &C_matr_AO, basis.no_occ());
         } else {
-            if !calc_sett.use_direct_scf {
-                calc_F_matr_indir_scf(&mut F_matr, &H_core, &P_matr, &eri);
-            } else {
-                todo!();
-            }
+            calc_new_F_matr(&mut F_matr, &H_core, &P_matr, &eri);
             let E_scf_curr = calc_E_scf(&P_matr, &H_core, &F_matr);
             scf.E_tot_conv = E_scf_curr + V_nuc;
 
             F_matr_pr = S_matr_inv_sqrt.dot(&F_matr).dot(&S_matr_inv_sqrt);
 
             if calc_sett.use_diis {
-                todo!();
+                let repl_idx = scf_iter % calc_sett.diis_sett.diis_max;
+                diis.as_mut().unwrap().push_to_ring_buf(
+                    &F_matr_pr,
+                    &DIIS::calc_FPS_comm(&F_matr_pr, &P_matr, &S_matr),
+                    repl_idx,
+                );
+
+                if scf_iter >= calc_sett.diis_sett.diis_min {
+                    let min_val = std::cmp::min(calc_sett.diis_sett.diis_max, scf_iter);
+                    F_matr_pr.assign(&diis.as_ref().unwrap().run_DIIS(min_val));
+                    // F_matr_pr.assign(&run_DIIS(
+                    //     min_val,
+                    //     &diis.take().unwrap().F_matr_pr_ring_buf,
+                    //     &diis.take().unwrap().err_matr_pr_ring_buf,
+                    // ));
+                }
             }
 
             (orb_ener, C_matr_MO) = F_matr_pr.eigh(UPLO::Upper).unwrap();
@@ -247,18 +283,17 @@ pub(crate) fn rhf_scf_normal(calc_sett: CalcSettings, basis: &BasisSet, mol: &Mo
 
             let rms_p_val = calc_rms_2_matr(&P_matr, &P_matr_old.clone());
             let delta_E = E_scf_curr - E_scf_prev;
-            let fps_comm = calc_FPS_comm(&F_matr, &P_matr, &S_matr);
+            let fps_comm = DIIS::calc_FPS_comm(&F_matr, &P_matr, &S_matr);
             let rms_comm_val =
                 (fps_comm.par_iter().map(|x| x * x).sum::<f64>() / fps_comm.len() as f64).sqrt();
 
-            // SCF output
             println!(
                 "{:>3} {:>20.12} {:>20.12} {:>20.12} {:>20.12} {:>20.12}",
                 scf_iter, E_scf_curr, scf.E_tot_conv, rms_p_val, delta_E, rms_comm_val
             );
 
             if (delta_E.abs() < calc_sett.e_diff_thrsh)
-                && (rms_p_val < calc_sett.commu_conv_thrsh)
+                && (rms_p_val < calc_sett.rms_p_matr_thrsh)
                 && (rms_comm_val < calc_sett.commu_conv_thrsh)
             {
                 scf.tot_scf_iter = scf_iter;
@@ -267,12 +302,10 @@ pub(crate) fn rhf_scf_normal(calc_sett: CalcSettings, basis: &BasisSet, mol: &Mo
                 scf.P_matr_conv = P_matr.clone();
                 scf.orb_energies_conv = orb_ener.clone();
                 println!("\nSCF CONVERGED!");
-                // println!("Total SCF iterations: {}", scf.tot_scf_iter);
-                is_conv = true;
+                is_scf_conv = true;
                 break;
             } else if scf_iter == calc_sett.max_scf_iter {
                 println!("\nSCF DID NOT CONVERGE!");
-                // println!("Total SCF iterations: {}", scf.tot_scf_iter);
                 break;
             }
             E_scf_prev = E_scf_curr;
@@ -281,7 +314,7 @@ pub(crate) fn rhf_scf_normal(calc_sett: CalcSettings, basis: &BasisSet, mol: &Mo
         }
     }
 
-    if is_conv {
+    if is_scf_conv {
         println!("{:*<55}", "");
         println!("* {:^51} *", "FINAL RESULTS");
         println!("{:*<55}", "");
@@ -300,25 +333,33 @@ fn calc_P_matr(P_matr: &mut Array2<f64>, C_matr: &Array2<f64>, no_occ: usize) {
     P_matr.assign(&(2.0 * C_occ.dot(&C_occ.t())));
 }
 
-fn calc_F_matr_indir_scf(
+fn calc_new_F_matr(
     F_matr: &mut Array2<f64>,
     H_core: &Array2<f64>,
     P_matr: &Array2<f64>,
-    eri: &EriArr1,
+    eri: &Option<EriArr1>,
 ) {
     F_matr.assign(H_core);
     let no_bf = F_matr.nrows();
 
-    for mu in 0..no_bf {
-        for nu in 0..=mu {
-            for lambda in 0..no_bf {
-                for sigma in 0..no_bf {
-                    F_matr[(mu, nu)] += P_matr[(lambda, sigma)]
-                        * (eri[(mu, nu, lambda, sigma)] - 0.5 * eri[(mu, sigma, lambda, nu)]);
+    // If eri is passed then this implies indirect SCF,
+    // else direct SCF is assumed
+    match eri {
+        Some(eri) => {
+            for mu in 0..no_bf {
+                for nu in 0..=mu {
+                    for lambda in 0..no_bf {
+                        for sigma in 0..no_bf {
+                            F_matr[(mu, nu)] += P_matr[(lambda, sigma)]
+                                * (eri[(mu, nu, lambda, sigma)]
+                                    - 0.5 * eri[(mu, sigma, lambda, nu)]);
+                        }
+                    }
+                    F_matr[(nu, mu)] = F_matr[(mu, nu)];
                 }
             }
-            F_matr[(nu, mu)] = F_matr[(mu, nu)];
         }
+        None => todo!(),
     }
 }
 
@@ -347,66 +388,6 @@ fn inv_ssqrt(arr2: &Array2<f64>, uplo: UPLO) -> Array2<f64> {
     let e_inv_sqrt_diag = Array::from_diag(&e_inv_sqrt);
     let result = v.dot(&e_inv_sqrt_diag).dot(&v.t());
     result
-}
-
-#[inline(always)]
-/// This is also the DIIS error matrix
-fn calc_FPS_comm(
-    F_matr: &Array2<f64>,
-    P_matr: &Array2<f64>,
-    S_matr: &Array2<f64>,
-    // S_matr_inv_sqrt: &Array2<f64>,
-) -> Array2<f64> {
-    F_matr.dot(P_matr).dot(S_matr) - S_matr.dot(P_matr).dot(F_matr)
-}
-
-// TODO: fix this function
-#[inline]
-fn run_DIIS(error_set_len: usize) {
-    // let no_cgtos =
-
-    // let mut B_matr =
-    let mut sol_vec = Array1::<f64>::zeros(error_set_len + 1);
-    sol_vec[error_set_len] = -1.0;
-
-    // // * ACTUALLY: Frobenius inner product of matrices (B_ij = error_matr_i * error_matr_j)
-    // // * OR: flatten error_matr and do dot product
-    // Zip::indexed(&mut B_matr).par_for_each(|(idx1, idx2), b_val| {
-    //     if idx1 >= idx2 {
-    //         *b_val = Zip::from(&self.error_matr_set[idx1])
-    //             .and(&self.error_matr_set[idx2])
-    //             .into_par_iter()
-    //             .map(|(error_matr_val1, error_matr_val2)| error_matr_val1 * error_matr_val2)
-    //             .sum();
-    //     }
-    // });
-
-    //
-    // for i in 0..error_set_len - 1 {
-    //     let slice = B_matr.slice(s![i + 1..error_set_len, i]).to_shared();
-    //     B_matr.slice_mut(s![i, i + 1..error_set_len]).assign(&slice);
-    // }
-    //
-    // // * Add langrange multiplier to B_matr_extended
-    // let new_axis_extension_1 = Array2::from_elem((error_set_len, 1), -1.0_f64);
-    // let mut new_axis_extension_2 = Array2::from_elem((1, error_set_len + 1), -1.0_f64);
-    // new_axis_extension_2[[0, error_set_len]] = 0.0_f64;
-    // let mut B_matr_extended = concatenate![Axis(1), B_matr, new_axis_extension_1];
-    // B_matr_extended = concatenate![Axis(0), B_matr_extended, new_axis_extension_2];
-    //
-    // // * Calculate the coefficients c_vec
-    // let c_vec = B_matr_extended.solveh(&sol_vec).unwrap();
-    // if is_debug {
-    //     println!("c_vec: {:>8.5}", c_vec);
-    // }
-    //
-    // // * Calculate the new DIIS Fock matrix for new D_matr
-    // let mut _F_matr_DIIS = Array2::<f64>::zeros((no_cgtos, no_cgtos));
-    // for i in 0..error_set_len {
-    //     _F_matr_DIIS = _F_matr_DIIS + c_vec[i] * &self.F_matr_set[i];
-    // }
-    //
-    // _F_matr_DIIS
 }
 
 #[cfg(test)]
@@ -445,17 +426,40 @@ mod tests {
         let calc_sett = CalcSettings {
             max_scf_iter: 100,
             e_diff_thrsh: 1e-8,
+            rms_p_matr_thrsh: 1e-8,
             commu_conv_thrsh: 1e-8,
             use_diis: false,
             use_direct_scf: false,
             diis_sett: DiisSettings {
-                diis_start: 0,
-                diis_end: 0,
+                diis_min: 0,
                 diis_max: 0,
             },
         };
+        let mut exec_times = ExecTimes::new();
 
-        let _scf = rhf_scf_normal(calc_sett, &basis, &mol);
+        let _scf = rhf_scf_normal(calc_sett, &mut exec_times, &basis, &mol);
+        println!("{:?}", _scf);
+    }
+
+    #[test]
+    fn test_rhf_indir_diis() {
+        let mol = Molecule::new("data/xyz/water90.xyz", 0);
+        let basis = BasisSet::new("STO-3G", &mol);
+        let calc_sett = CalcSettings {
+            max_scf_iter: 100,
+            e_diff_thrsh: 1e-8,
+            rms_p_matr_thrsh: 1e-8,
+            commu_conv_thrsh: 1e-8,
+            use_diis: true,
+            use_direct_scf: false,
+            diis_sett: DiisSettings {
+                diis_min: 2,
+                diis_max: 6,
+            },
+        };
+        let mut exec_times = ExecTimes::new();
+
+        let _scf = rhf_scf_normal(calc_sett, &mut exec_times, &basis, &mol);
         println!("{:?}", _scf);
     }
 }
