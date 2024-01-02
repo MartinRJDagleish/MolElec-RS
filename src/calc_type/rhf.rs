@@ -134,10 +134,11 @@ pub fn calc_2e_int_matr(basis: &BasisSet) -> EriArr1 {
     let no_shells = basis.no_shells();
 
     for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
-        for sh_idx2 in 0..=sh_idx1 {
-            let shell2 = basis.shell(sh_idx2);
-            for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
-                let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
+        for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
+            let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
+
+            for sh_idx2 in 0..=sh_idx1 {
+                let shell2 = basis.shell(sh_idx2);
                 for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
                     let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
 
@@ -146,13 +147,11 @@ pub fn calc_2e_int_matr(basis: &BasisSet) -> EriArr1 {
 
                         for sh_idx3 in 0..no_shells {
                             let shell3 = basis.shell(sh_idx3);
+                            for (cgto_idx3, cgto3) in shell3.cgto_iter().enumerate() {
+                                let lambda = basis.sh_len_offset(sh_idx3) + cgto_idx3;
 
-                            for sh_idx4 in 0..=sh_idx3 {
-                                let shell4 = basis.shell(sh_idx4);
-
-                                for (cgto_idx3, cgto3) in shell3.cgto_iter().enumerate() {
-                                    let lambda = basis.sh_len_offset(sh_idx3) + cgto_idx3;
-
+                                for sh_idx4 in 0..=sh_idx3 {
+                                    let shell4 = basis.shell(sh_idx4);
                                     for (cgto_idx4, cgto4) in shell4.cgto_iter().enumerate() {
                                         let sigma = basis.sh_len_offset(sh_idx4) + cgto_idx4;
 
@@ -198,18 +197,14 @@ pub(crate) fn rhf_scf_normal(
 
     let mut is_scf_conv = false;
     let mut scf = SCF::default();
-    let mut diis: Option<DIIS>;
-    match calc_sett.use_diis {
-        true => {
-            diis = Some(DIIS::new(
-                &calc_sett.diis_sett,
-                [basis.no_bf(), basis.no_bf()],
-            ));
-        }
-        false => {
-            diis = None;
-        }
-    }
+    let mut diis: Option<DIIS> = if calc_sett.use_diis {
+        Some(DIIS::new(
+            &calc_sett.diis_sett,
+            [basis.no_bf(), basis.no_bf()],
+        ))
+    } else {
+        None
+    };
 
     let V_nuc: f64 = if mol.no_atoms() > 100 {
         mol.calc_core_potential_par()
@@ -225,11 +220,15 @@ pub(crate) fn rhf_scf_normal(
     let schwarz_est_matr;
     if calc_sett.use_direct_scf {
         eri = None;
+
+        println!("Calculating Schwarz int estimates ...");
         schwarz_est_matr = Some(calc_schwarz_est_int(basis));
+        println!("FINISHED Schwarz int estimates ...");
     } else {
+        schwarz_est_matr = None;
+
         println!("Calculating 2e integrals ...");
         eri = Some(calc_2e_int_matr(basis));
-        schwarz_est_matr = None;
         println!("FINSIHED calculating 2e integrals ...");
     }
 
@@ -244,9 +243,11 @@ pub(crate) fn rhf_scf_normal(
     let mut P_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
     let mut P_matr_old = P_matr.clone();
     let mut delta_P_matr = P_matr.clone();
-    let mut F_matr = H_core.clone();
     let mut F_matr_pr;
     let mut diis_str = "";
+
+    // Initial guess -> H_core
+    let mut F_matr = H_core.clone();
 
     // Print SCF iteration Header
     match SHOW_ALL_CONV_CRIT {
@@ -266,7 +267,6 @@ pub(crate) fn rhf_scf_normal(
     for scf_iter in 0..=calc_sett.max_scf_iter {
         if scf_iter == 0 {
             F_matr_pr = S_matr_inv_sqrt.dot(&F_matr).dot(&S_matr_inv_sqrt);
-            // println!("F_matr_pr:\n {}", &F_matr_pr);
 
             (orb_ener, C_matr_MO) = F_matr_pr.eigh(UPLO::Upper).unwrap();
             C_matr_AO = S_matr_inv_sqrt.dot(&C_matr_MO);
@@ -280,7 +280,12 @@ pub(crate) fn rhf_scf_normal(
                     calc_new_F_matr_ind_scf(&mut F_matr, &H_core, &P_matr, eri);
                 }
                 None => {
-                    calc_new_F_matr_dir_scf(&mut F_matr, &delta_P_matr, schwarz_est_matr.as_ref().unwrap(), basis);
+                    calc_new_F_matr_dir_scf(
+                        &mut F_matr,
+                        &delta_P_matr,
+                        schwarz_est_matr.as_ref().unwrap(),
+                        basis,
+                    );
                 }
             }
             let E_scf_curr = calc_E_scf(&P_matr, &H_core, &F_matr);
@@ -392,13 +397,82 @@ fn calc_new_F_matr_ind_scf(
     }
 }
 
+/// Calc Fock matrix in a direct SCF fashion (i.e. without precomputed eri tensor)
 fn calc_new_F_matr_dir_scf(
     F_matr: &mut Array2<f64>,
     delta_P_matr: &Array2<f64>,
     Schwarz_est_int: &Array2<f64>,
     basis: &BasisSet,
 ) {
-    todo!()
+    const INT_THRSH: f64 = 1e-12;
+    let mut G_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
+
+    for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
+        for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
+            let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
+
+            for (sh_idx2, shell2) in basis.shell_iter().enumerate() {
+                for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
+                    let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
+                    let max_dP_val1 = 2.0 * delta_P_matr[(mu, nu)].abs();
+
+                    for (sh_idx3, shell3) in basis.shell_iter().enumerate() {
+                        for (cgto_idx3, cgto3) in shell3.cgto_iter().enumerate() {
+                            let lam = basis.sh_len_offset(sh_idx3) + cgto_idx3;
+                            let max_dP_val4 = 0.5 * delta_P_matr[(nu, lam)].abs();
+                            let max_dP_val5 = 0.5 * delta_P_matr[(mu, lam)].abs();
+                            let max_dP_first_three = [max_dP_val1, max_dP_val4, max_dP_val5]
+                                .iter()
+                                .fold(f64::MIN, |a, &b| a.max(b));
+
+                            for (sh_idx4, shell4) in basis.shell_iter().enumerate() {
+                                for (cgto_idx4, cgto4) in shell4.cgto_iter().enumerate() {
+                                    let sig = basis.sh_len_offset(sh_idx4) + cgto_idx4;
+                                    let max_dP_val2 = 2.0 * delta_P_matr[(lam, sig)].abs();
+                                    let max_dP_val3 = 0.5 * delta_P_matr[(mu, sig)].abs();
+                                    let max_dP_val6 = 0.5 * delta_P_matr[(nu, sig)].abs();
+
+                                    let max_dP_val =
+                                        [max_dP_first_three, max_dP_val2, max_dP_val3, max_dP_val6]
+                                            .iter()
+                                            .fold(f64::MIN, |a, &b| a.max(b));
+
+                                    let int_est = Schwarz_est_int[(mu, nu)]
+                                        * Schwarz_est_int[(lam, sig)]
+                                        * max_dP_val;
+                                    if int_est >= INT_THRSH {
+                                        let eri_val = 0.5 * calc_ERI_int_cgto(cgto1, cgto2, cgto3, cgto4);
+
+                                        // 1. Coulomb type contribution
+                                        G_matr[(mu, nu)] += delta_P_matr[(lam, sig)] * eri_val;
+                                        G_matr[(lam, sig)] += delta_P_matr[(mu, nu)] * eri_val;
+
+                                        // 2. Exchange type contribution
+                                        G_matr[(mu, lam)] -=
+                                            0.25_f64 * delta_P_matr[(nu, sig)] * eri_val;
+                                        G_matr[(nu, sig)] -=
+                                            0.25_f64 * delta_P_matr[(mu, lam)] * eri_val;
+                                        G_matr[(mu, sig)] -=
+                                            0.25_f64 * delta_P_matr[(nu, lam)] * eri_val;
+                                        G_matr[(nu, lam)] -=
+                                            0.25_f64 * delta_P_matr[(mu, sig)] * eri_val;
+                                    } else {
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let GG_matr = &G_matr + &G_matr.t();
+    Zip::from(F_matr)
+        .and(&GG_matr)
+        .into_par_iter()
+        .for_each(|(f, gg)| *f += 0.5 * *gg);
 }
 
 fn calc_E_scf(P_matr: &Array2<f64>, H_core: &Array2<f64>, F_matr: &Array2<f64>) -> f64 {
@@ -497,5 +571,26 @@ mod tests {
 
         let _scf = rhf_scf_normal(calc_sett, &mut exec_times, &basis, &mol);
         println!("{:?}", _scf);
+    }
+
+    #[test]
+    fn test_rhf_dir_diis() {
+        let mol = Molecule::new("data/xyz/water90.xyz", 0);
+        let basis = BasisSet::new("STO-3G", &mol);
+        let calc_sett = CalcSettings {
+            max_scf_iter: 100,
+            e_diff_thrsh: 1e-8,
+            commu_conv_thrsh: 1e-6,
+            use_diis: true,
+            use_direct_scf: true,
+            diis_sett: DiisSettings {
+                diis_min: 2,
+                diis_max: 6,
+            },
+        };
+        let mut exec_times = ExecTimes::new();
+
+        let _scf = rhf_scf_normal(calc_sett, &mut exec_times, &basis, &mol);
+        // println!("{:?}", _scf);
     }
 }

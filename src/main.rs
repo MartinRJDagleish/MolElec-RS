@@ -50,7 +50,7 @@ fn main() {
         e_diff_thrsh: 1e-10,
         commu_conv_thrsh: 1e-10,
         use_diis: true,
-        use_direct_scf: false,
+        use_direct_scf: true,
         diis_sett: DiisSettings {
             diis_min: 2,
             diis_max: 6,
