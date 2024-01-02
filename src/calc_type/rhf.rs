@@ -1,15 +1,12 @@
 use crate::basisset::BasisSet;
 use crate::calc_type::{EriArr1, DIIS};
+use crate::mol_int_and_deriv::te_int::calc_schwarz_est_int;
 use crate::mol_int_and_deriv::{
     oe_int::{calc_kinetic_int_cgto, calc_overlap_int_cgto, calc_pot_int_cgto},
     te_int::calc_ERI_int_cgto,
 };
 use crate::molecule::Molecule;
-use crate::print_utils::{
-    fmt_f64,
-    print_rhf::print_scf_header_and_settings,
-    ExecTimes,
-};
+use crate::print_utils::{fmt_f64, print_rhf::print_scf_header_and_settings, ExecTimes};
 use ndarray::parallel::prelude::*;
 use ndarray::{s, Array, Array1, Array2, Zip};
 use ndarray_linalg::{Eigh, UPLO};
@@ -220,13 +217,21 @@ pub(crate) fn rhf_scf_normal(
         mol.calc_core_potential_ser()
     };
 
+    println!("Calculating 1e integrals ...");
     let (S_matr, H_core) = calc_1e_int_matrs(basis, mol);
+    println!("FINSIHED calculating 1e integrals ...");
 
-    let mut eri: Option<EriArr1> = if calc_sett.use_direct_scf {
-        None
+    let mut eri;
+    let schwarz_est_matr;
+    if calc_sett.use_direct_scf {
+        eri = None;
+        schwarz_est_matr = Some(calc_schwarz_est_int(basis));
     } else {
-        Some(calc_2e_int_matr(basis))
-    };
+        println!("Calculating 2e integrals ...");
+        eri = Some(calc_2e_int_matr(basis));
+        schwarz_est_matr = None;
+        println!("FINSIHED calculating 2e integrals ...");
+    }
 
     let S_matr_inv_sqrt = inv_ssqrt(&S_matr, UPLO::Upper);
 
@@ -238,10 +243,10 @@ pub(crate) fn rhf_scf_normal(
 
     let mut P_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
     let mut P_matr_old = P_matr.clone();
+    let mut delta_P_matr = P_matr.clone();
     let mut F_matr = H_core.clone();
     let mut F_matr_pr;
     let mut diis_str = "";
-
 
     // Print SCF iteration Header
     match SHOW_ALL_CONV_CRIT {
@@ -267,8 +272,17 @@ pub(crate) fn rhf_scf_normal(
             C_matr_AO = S_matr_inv_sqrt.dot(&C_matr_MO);
 
             calc_P_matr(&mut P_matr, &C_matr_AO, basis.no_occ());
+            delta_P_matr = P_matr.clone();
         } else {
-            calc_new_F_matr(&mut F_matr, &H_core, &P_matr, &eri);
+            /// direct or indirect scf
+            match eri {
+                Some(ref eri) => {
+                    calc_new_F_matr_ind_scf(&mut F_matr, &H_core, &P_matr, eri);
+                }
+                None => {
+                    calc_new_F_matr_dir_scf(&mut F_matr, &delta_P_matr, schwarz_est_matr.as_ref().unwrap(), basis);
+                }
+            }
             let E_scf_curr = calc_E_scf(&P_matr, &H_core, &F_matr);
             scf.E_tot_conv = E_scf_curr + V_nuc;
             let fps_comm = DIIS::calc_FPS_comm(&F_matr, &P_matr, &S_matr);
@@ -333,6 +347,7 @@ pub(crate) fn rhf_scf_normal(
             E_scf_prev = E_scf_curr;
             P_matr_old = P_matr.clone();
             calc_P_matr(&mut P_matr, &C_matr_AO, basis.no_occ());
+            delta_P_matr = (&P_matr - &P_matr_old).to_owned();
         }
     }
 
@@ -355,34 +370,35 @@ fn calc_P_matr(P_matr: &mut Array2<f64>, C_matr: &Array2<f64>, no_occ: usize) {
     P_matr.assign(&(2.0 * C_occ.dot(&C_occ.t())));
 }
 
-fn calc_new_F_matr(
+fn calc_new_F_matr_ind_scf(
     F_matr: &mut Array2<f64>,
     H_core: &Array2<f64>,
     P_matr: &Array2<f64>,
-    eri: &Option<EriArr1>,
+    eri: &EriArr1,
 ) {
     F_matr.assign(H_core);
     let no_bf = F_matr.nrows();
 
-    // If eri is passed then this implies indirect SCF,
-    // else direct SCF is assumed
-    match eri {
-        Some(eri) => {
-            for mu in 0..no_bf {
-                for nu in 0..=mu {
-                    for lambda in 0..no_bf {
-                        for sigma in 0..no_bf {
-                            F_matr[(mu, nu)] += P_matr[(lambda, sigma)]
-                                * (eri[(mu, nu, lambda, sigma)]
-                                    - 0.5 * eri[(mu, sigma, lambda, nu)]);
-                        }
-                    }
-                    F_matr[(nu, mu)] = F_matr[(mu, nu)];
+    for mu in 0..no_bf {
+        for nu in 0..=mu {
+            for lambda in 0..no_bf {
+                for sigma in 0..no_bf {
+                    F_matr[(mu, nu)] += P_matr[(lambda, sigma)]
+                        * (eri[(mu, nu, lambda, sigma)] - 0.5 * eri[(mu, sigma, lambda, nu)]);
                 }
             }
+            F_matr[(nu, mu)] = F_matr[(mu, nu)];
         }
-        None => todo!(),
     }
+}
+
+fn calc_new_F_matr_dir_scf(
+    F_matr: &mut Array2<f64>,
+    delta_P_matr: &Array2<f64>,
+    Schwarz_est_int: &Array2<f64>,
+    basis: &BasisSet,
+) {
+    todo!()
 }
 
 fn calc_E_scf(P_matr: &Array2<f64>, H_core: &Array2<f64>, F_matr: &Array2<f64>) -> f64 {

@@ -1,5 +1,5 @@
 use crate::{
-    basisset::{CGTO, PGTO},
+    basisset::{BasisSet, CGTO, PGTO},
     mol_int_and_deriv::{
         oe_int::calc_vec_P,
         recurrence_rel::{EHermCoeff3D, RHermAuxInt},
@@ -9,7 +9,7 @@ use crate::{
         cartesian_comp::{CC_X, CC_Y, CC_Z},
     },
 };
-use ndarray::array;
+use ndarray::{array, Array2};
 use std::f64::consts::PI;
 
 #[allow(non_snake_case)]
@@ -160,6 +160,28 @@ pub fn calc_ERI_int_pgto(
 
     let ERI_fac = *ERI_PI_FAC * (1.0 / (p * q * (p + q).sqrt()));
     eri_pgto_val * ERI_fac
+}
+
+/// |(μν|λσ)|^2 <= (μν|μν)^1/2 (λσ|λσ)^1/2 -> no distance dependence but rigourous 
+pub fn calc_schwarz_est_int(basis: &BasisSet) -> Array2<f64> {
+    let mut Schwarz_est_int = Array2::zeros((basis.no_bf(), basis.no_bf()));
+
+    for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
+        for sh_idx2 in 0..=sh_idx1 {
+            let shell2 = basis.shell(sh_idx2);
+            for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
+                let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
+                for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
+                    let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
+                    Schwarz_est_int[(mu, nu)] =
+                        calc_ERI_int_cgto(cgto1, cgto2, cgto1, cgto2).sqrt();
+                    Schwarz_est_int[(nu, mu)] = Schwarz_est_int[(mu, nu)];
+                }
+            }
+        }
+    }
+
+    Schwarz_est_int
 }
 
 #[cfg(test)]
