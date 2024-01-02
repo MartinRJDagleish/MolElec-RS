@@ -79,6 +79,15 @@ impl DIIS {
         self.err_matr_pr_ring_buf[idx].assign(err_matr);
     }
 
+    /// 
+    /// - Source: Pulay DIIS paper (1980)
+    /// - Link: https://doi.org/10.1016/0009-2614(80)80396-4
+    /// - Source: Pulay DIIS improvment paper (1982)
+    /// - Link: https://doi.org/10.1002/jcc.540030413
+    /// → using e' = A^+(FPS - SPF)A here
+    ///
+    /// see also: https://en.wikipedia.org/wiki/DIIS
+    /// TODO: only recalculate the last row and column of B_matr
     fn run_DIIS(&self, error_set_len: usize) -> Array2<f64> {
         let mut B_matr = Array2::<f64>::zeros((error_set_len + 1, error_set_len + 1));
         let mut sol_vec = Array1::<f64>::zeros(error_set_len + 1);

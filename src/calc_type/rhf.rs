@@ -5,7 +5,11 @@ use crate::mol_int_and_deriv::{
     te_int::calc_ERI_int_cgto,
 };
 use crate::molecule::Molecule;
-use crate::print_utils::{fmt_f64, ExecTimes};
+use crate::print_utils::{
+    fmt_f64,
+    print_rhf::print_scf_header_and_settings,
+    ExecTimes,
+};
 use ndarray::parallel::prelude::*;
 use ndarray::{s, Array, Array1, Array2, Zip};
 use ndarray_linalg::{Eigh, UPLO};
@@ -195,6 +199,7 @@ pub(crate) fn rhf_scf_normal(
     // TODO:
     // - [ ] Print settings
     // - [ ] Print initial header
+    print_scf_header_and_settings(&calc_sett);
     const show_all_conv_crit: bool = false;
 
     let mut is_scf_conv = false;
@@ -238,6 +243,8 @@ pub(crate) fn rhf_scf_normal(
     let mut P_matr_old = P_matr.clone();
     let mut F_matr = H_core.clone();
     let mut F_matr_pr;
+    let mut diis_str = "";
+
 
     // Print SCF iteration Header
     match show_all_conv_crit {
@@ -254,8 +261,6 @@ pub(crate) fn rhf_scf_normal(
             );
         }
     }
-
-    let mut diis_str = "";
     for scf_iter in 0..=calc_sett.max_scf_iter {
         if scf_iter == 0 {
             F_matr_pr = S_matr_inv_sqrt.dot(&F_matr).dot(&S_matr_inv_sqrt);

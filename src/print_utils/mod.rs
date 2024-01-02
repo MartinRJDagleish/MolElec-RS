@@ -1,6 +1,8 @@
 use std::{collections::HashMap, time::Instant};
 
-pub fn print_initial_header() {
+pub mod print_rhf;
+
+pub fn print_logo() {
     //     const HEADER_V1: &str = r#"
     // ___  ___      _   _____ _            ______  _____
     // |  \/  |     | | |  ___| |           | ___ \/  ___|

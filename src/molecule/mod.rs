@@ -248,6 +248,9 @@ impl Molecule {
 
         // skip the comment line
         for (at_idx, line) in lines.skip(1).enumerate() {
+            if line.is_empty() {
+                break;
+            }
             let mut line_parts = line.split_whitespace(); // split whitespace does "trim" automatically
 
             at_strs.push(line_parts.next().unwrap().to_string());

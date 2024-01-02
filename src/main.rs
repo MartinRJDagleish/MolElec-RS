@@ -10,7 +10,7 @@ mod mol_int_and_deriv;
 mod molecule;
 mod print_utils;
 
-use crate::{calc_type::CalcType, print_utils::print_initial_header};
+use crate::{calc_type::CalcType, print_utils::print_logo};
 use basisset::BasisSet;
 use calc_type::{DiisSettings, CalcSettings};
 use molecule::Molecule;
@@ -23,10 +23,11 @@ fn main() {
     let mut exec_times = print_utils::ExecTimes::new();
     exec_times.start("Total");
 
-    print_initial_header();
+    print_logo();
 
     exec_times.start("Molecule");
-    let mol = Molecule::new("data/xyz/water90.xyz", 0);
+    let mol = Molecule::new("data/xyz/furan.xyz", 0);
+    // let mol = Molecule::new("data/xyz/water90.xyz", 0);
     // let mol = Molecule::new("data/xyz/calicheamicin_tinker_std.xtbopt.xyz", 0);
     // println!("Molecule: {:?}", _mol);
     exec_times.stop("Molecule");
