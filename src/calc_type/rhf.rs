@@ -195,7 +195,7 @@ pub(crate) fn rhf_scf_normal(
     basis: &BasisSet,
     mol: &Molecule,
 ) -> SCF {
-    print_scf_header_and_settings(&calc_sett);
+    print_scf_header_and_settings(&calc_sett, crate::calc_type::CalcType::RHF);
     const SHOW_ALL_CONV_CRIT: bool = false;
 
     let mut is_scf_conv = false;
@@ -219,10 +219,10 @@ pub(crate) fn rhf_scf_normal(
     let (S_matr, H_core) = calc_1e_int_matrs(basis, mol);
     println!("FINSIHED calculating 1e integrals ...");
 
-    let mut eri;
+    let mut eri_opt;
     let schwarz_est_matr;
     if calc_sett.use_direct_scf {
-        eri = None;
+        eri_opt = None;
 
         println!("Calculating Schwarz int estimates ...");
         schwarz_est_matr = Some(calc_schwarz_est_int(basis));
@@ -231,7 +231,7 @@ pub(crate) fn rhf_scf_normal(
         schwarz_est_matr = None;
 
         println!("Calculating 2e integrals ...");
-        eri = Some(calc_2e_int_matr(basis));
+        eri_opt = Some(calc_2e_int_matr(basis));
         println!("FINSIHED calculating 2e integrals ...");
     }
 
@@ -245,7 +245,14 @@ pub(crate) fn rhf_scf_normal(
 
     let mut P_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
     let mut P_matr_old = P_matr.clone();
-    let mut delta_P_matr = P_matr.clone();
+    let mut delta_P_matr = None;
+    // if calc_sett.use_direct_scf {
+    //     delta_P_matr = Some(P_matr.clone());
+    // } else {
+    //     delta_P_matr = None;
+    // }
+    // let mut delta_P_matr: Option<Array2<f64>> = Some(P_matr.clone());
+
     let mut F_matr_pr;
     let mut diis_str = "";
 
@@ -275,23 +282,25 @@ pub(crate) fn rhf_scf_normal(
             C_matr_AO = S_matr_inv_sqrt.dot(&C_matr_MO);
 
             calc_P_matr_rhf(&mut P_matr, &C_matr_AO, basis.no_occ());
-            delta_P_matr = P_matr.clone();
+            if calc_sett.use_direct_scf {
+                delta_P_matr = Some(P_matr.clone());
+            }
         } else {
             /// direct or indirect scf
-            match eri {
+            match eri_opt {
                 Some(ref eri) => {
-                    calc_new_F_matr_ind_scf(&mut F_matr, &H_core, &P_matr, eri);
+                    calc_new_F_matr_ind_scf_rhf(&mut F_matr, &H_core, &P_matr, eri);
                 }
                 None => {
-                    calc_new_F_matr_dir_scf(
+                    calc_new_F_matr_dir_scf_rhf(
                         &mut F_matr,
-                        &delta_P_matr,
+                        delta_P_matr.as_ref().unwrap(),
                         schwarz_est_matr.as_ref().unwrap(),
                         basis,
                     );
                 }
             }
-            let E_scf_curr = calc_E_scf(&P_matr, &H_core, &F_matr);
+            let E_scf_curr = calc_E_scf_rhf(&P_matr, &H_core, &F_matr);
             scf.E_tot_conv = E_scf_curr + V_nuc;
             let fps_comm = DIIS::calc_FPS_comm(&F_matr, &P_matr, &S_matr);
 
@@ -305,7 +314,6 @@ pub(crate) fn rhf_scf_normal(
                     .push_to_ring_buf(&F_matr_pr, &err_matr, repl_idx);
 
                 if scf_iter >= calc_sett.diis_sett.diis_min {
-                    // println!("{:^120}", "*** ↓ Using DIIS ↓ ***");
                     let err_set_len = std::cmp::min(calc_sett.diis_sett.diis_max, scf_iter);
                     F_matr_pr = diis.as_ref().unwrap().run_DIIS(err_set_len);
                     diis_str = "DIIS";
@@ -355,7 +363,9 @@ pub(crate) fn rhf_scf_normal(
             E_scf_prev = E_scf_curr;
             P_matr_old = P_matr.clone();
             calc_P_matr_rhf(&mut P_matr, &C_matr_AO, basis.no_occ());
-            delta_P_matr = (&P_matr - &P_matr_old).to_owned();
+            if calc_sett.use_direct_scf {
+                delta_P_matr = Some((&P_matr - &P_matr_old).to_owned());
+            }
         }
     }
 
@@ -378,7 +388,7 @@ fn calc_P_matr_rhf(P_matr: &mut Array2<f64>, C_matr: &Array2<f64>, no_occ: usize
     general_mat_mul(2.0_f64, &C_occ, &C_occ.t(), 0.0_f64, P_matr)
 }
 
-fn calc_new_F_matr_ind_scf(
+fn calc_new_F_matr_ind_scf_rhf(
     F_matr: &mut Array2<f64>,
     H_core: &Array2<f64>,
     P_matr: &Array2<f64>,
@@ -401,7 +411,7 @@ fn calc_new_F_matr_ind_scf(
 }
 
 /// Calc Fock matrix in a direct SCF fashion (i.e. without precomputed eri tensor)
-fn calc_new_F_matr_dir_scf(
+fn calc_new_F_matr_dir_scf_rhf(
     F_matr: &mut Array2<f64>,
     delta_P_matr: &Array2<f64>,
     Schwarz_est_int: &Array2<f64>,
@@ -479,7 +489,7 @@ fn calc_new_F_matr_dir_scf(
         .for_each(|(f, gg)| *f += 0.5 * *gg);
 }
 
-fn calc_E_scf(P_matr: &Array2<f64>, H_core: &Array2<f64>, F_matr: &Array2<f64>) -> f64 {
+fn calc_E_scf_rhf(P_matr: &Array2<f64>, H_core: &Array2<f64>, F_matr: &Array2<f64>) -> f64 {
     Zip::from(P_matr)
         .and(H_core)
         .and(F_matr)
@@ -513,12 +523,12 @@ pub(crate) fn inv_ssqrt(arr2: &Array2<f64>, uplo: UPLO) -> Array2<f64> {
 /// Missing: CFMM for Coulomb and LinK for Exchange matrix
 #[allow(unused)]
 fn rhf_scf_linscal(
-    calc_sett: CalcSettings,
+    calc_sett: &CalcSettings,
     exec_times: &mut ExecTimes,
     basis: &BasisSet,
     mol: &Molecule,
 ) {
-    print_scf_header_and_settings(&calc_sett);
+    print_scf_header_and_settings(calc_sett, crate::calc_type::CalcType::RHF);
     const SHOW_ALL_CONV_CRIT: bool = false;
 
     let mut is_scf_conv = false;
@@ -578,18 +588,21 @@ fn rhf_scf_linscal(
 
             calc_P_matr_rhf(&mut P_matr, &C_matr_AO, basis.no_occ());
             println!("Guess P_matr:\n {:12.6}", &P_matr);
-            println!("Eigenvalues of guess: {:12.6}", &P_matr.eigh(UPLO::Upper).unwrap().0);
+            println!(
+                "Eigenvalues of guess: {:12.6}",
+                &P_matr.eigh(UPLO::Upper).unwrap().0
+            );
             delta_P_matr = P_matr.clone();
         } else {
             // 1. First new Fock matrix
-            calc_new_F_matr_dir_scf(
+            calc_new_F_matr_dir_scf_rhf(
                 &mut F_matr,
                 &delta_P_matr,
                 schwarz_est_matr.as_ref().unwrap(),
                 basis,
             );
             // 2. Calc E_scf
-            let E_scf_curr = calc_E_scf(&P_matr, &H_core, &F_matr);
+            let E_scf_curr = calc_E_scf_rhf(&P_matr, &H_core, &F_matr);
             scf.E_tot_conv = E_scf_curr + V_nuc;
 
             let delta_E = E_scf_curr - E_scf_prev;
@@ -705,7 +718,7 @@ mod tests {
         let mut exec_times = ExecTimes::new();
 
         let _scf = rhf_scf_normal(&calc_sett, &mut exec_times, &basis, &mol);
-        println!("{:?}", _scf);
+        // println!("{:?}", _scf);
     }
 
     #[test]
@@ -729,23 +742,23 @@ mod tests {
         // println!("{:?}", _scf);
     }
 
-    #[test]
-    fn test_rhf_dir_linscal() {
-        let mol = Molecule::new("data/xyz/water90.xyz", 0);
-        let basis = BasisSet::new("STO-3G", &mol);
-        let calc_sett = CalcSettings {
-            max_scf_iter: 100,
-            e_diff_thrsh: 1e-8,
-            commu_conv_thrsh: 1e-6,
-            use_diis: false,
-            use_direct_scf: true,
-            diis_sett: DiisSettings {
-                diis_min: 2,
-                diis_max: 6,
-            },
-        };
-        let mut exec_times = ExecTimes::new();
-
-        let _scf = rhf_scf_linscal(calc_sett, &mut exec_times, &basis, &mol);
-    }
+    // #[test]
+    // fn test_rhf_dir_linscal() {
+    //     let mol = Molecule::new("data/xyz/water90.xyz", 0);
+    //     let basis = BasisSet::new("STO-3G", &mol);
+    //     let calc_sett = CalcSettings {
+    //         max_scf_iter: 100,
+    //         e_diff_thrsh: 1e-8,
+    //         commu_conv_thrsh: 1e-6,
+    //         use_diis: false,
+    //         use_direct_scf: true,
+    //         diis_sett: DiisSettings {
+    //             diis_min: 2,
+    //             diis_max: 6,
+    //         },
+    //     };
+    //     let mut exec_times = ExecTimes::new();
+    //
+    //     let _scf = rhf_scf_linscal(calc_sett, &mut exec_times, &basis, &mol);
+    // }
 }

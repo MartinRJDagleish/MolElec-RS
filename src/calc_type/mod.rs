@@ -70,7 +70,6 @@ impl DIIS {
         F_matr: &Array2<f64>,
         P_matr: &Array2<f64>,
         S_matr: &Array2<f64>,
-        // S_matr_inv_sqrt: &Array2<f64>,
     ) -> Array2<f64> {
         F_matr.dot(P_matr).dot(S_matr) - S_matr.dot(P_matr).dot(F_matr)
     }
@@ -80,7 +79,6 @@ impl DIIS {
         self.err_matr_pr_ring_buf[idx].assign(err_matr);
     }
 
-    /// 
     /// - Source: Pulay DIIS paper (1980)
     /// - Link: https://doi.org/10.1016/0009-2614(80)80396-4
     /// - Source: Pulay DIIS improvment paper (1982)
@@ -107,10 +105,10 @@ impl DIIS {
             B_matr[(error_set_len, i)] = -1.0;
         }
 
-        // * Calculate the coefficients c_vec
+        // Calculate the coefficients c_vec
         let c_vec = B_matr.solveh(&sol_vec).unwrap();
         
-        // * Calculate the new DIIS Fock matrix for new D_matr
+        // Calculate the new DIIS Fock matrix for new D_matr
         let no_cgtos = self.err_matr_pr_ring_buf[0].shape()[0];
         let mut _F_matr_DIIS = Array2::<f64>::zeros((no_cgtos, no_cgtos));
         for i in 0..error_set_len {

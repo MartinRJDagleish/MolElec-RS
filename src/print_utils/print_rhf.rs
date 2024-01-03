@@ -1,8 +1,12 @@
-use crate::calc_type::CalcSettings;
+use crate::calc_type::{CalcSettings, CalcType};
 
-pub(crate) fn print_scf_header_and_settings(calc_sett: &CalcSettings) {
+pub(crate) fn print_scf_header_and_settings(calc_sett: &CalcSettings, calc_type: CalcType) {
     println!("{:=>35}", "");
-    println!("{:^35}", "RHF SCF");
+    match calc_type {
+        CalcType::RHF => println!("{:^35}", "RHF SCF"),
+        CalcType::UHF => println!("{:^35}", "UHF SCF"),
+        CalcType::ROHF => println!("{:^35}", "ROHF SCF")
+    }
     println!("{:=>35}", "");
 
     println!("{:-20}", "");
