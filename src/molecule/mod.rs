@@ -285,7 +285,6 @@ impl Molecule {
         Ok((z_vals, geom_matr, atoms, no_atoms))
     }
 
-
     pub(crate) fn calc_core_potential_ser(&self) -> f64 {
         let mut core_potential = 0.0;
         let coords = &self.geom.coords_matr;

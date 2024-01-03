@@ -190,7 +190,7 @@ pub fn calc_2e_int_matr(basis: &BasisSet) -> EriArr1 {
 /// - direct vs. indirect SCF
 #[allow(unused)]
 pub(crate) fn rhf_scf_normal(
-    calc_sett: CalcSettings,
+    calc_sett: &CalcSettings,
     exec_times: &mut ExecTimes,
     basis: &BasisSet,
     mol: &Molecule,
@@ -274,7 +274,7 @@ pub(crate) fn rhf_scf_normal(
             (orb_ener, C_matr_MO) = F_matr_pr.eigh(UPLO::Upper).unwrap();
             C_matr_AO = S_matr_inv_sqrt.dot(&C_matr_MO);
 
-            calc_P_matr(&mut P_matr, &C_matr_AO, basis.no_occ());
+            calc_P_matr_rhf(&mut P_matr, &C_matr_AO, basis.no_occ());
             delta_P_matr = P_matr.clone();
         } else {
             /// direct or indirect scf
@@ -354,7 +354,7 @@ pub(crate) fn rhf_scf_normal(
             }
             E_scf_prev = E_scf_curr;
             P_matr_old = P_matr.clone();
-            calc_P_matr(&mut P_matr, &C_matr_AO, basis.no_occ());
+            calc_P_matr_rhf(&mut P_matr, &C_matr_AO, basis.no_occ());
             delta_P_matr = (&P_matr - &P_matr_old).to_owned();
         }
     }
@@ -373,7 +373,7 @@ pub(crate) fn rhf_scf_normal(
     scf
 }
 
-fn calc_P_matr(P_matr: &mut Array2<f64>, C_matr: &Array2<f64>, no_occ: usize) {
+fn calc_P_matr_rhf(P_matr: &mut Array2<f64>, C_matr: &Array2<f64>, no_occ: usize) {
     let C_occ = C_matr.slice(s![.., ..no_occ]);
     general_mat_mul(2.0_f64, &C_occ, &C_occ.t(), 0.0_f64, P_matr)
 }
@@ -498,7 +498,7 @@ fn calc_rms_2_matr(matr1: &Array2<f64>, matr2: &Array2<f64>) -> f64 {
         / (matr1.len() as f64).sqrt()
 }
 
-fn inv_ssqrt(arr2: &Array2<f64>, uplo: UPLO) -> Array2<f64> {
+pub(crate) fn inv_ssqrt(arr2: &Array2<f64>, uplo: UPLO) -> Array2<f64> {
     let (e, v) = arr2.eigh(uplo).unwrap();
     let e_inv_sqrt = Array1::from_iter(e.iter().map(|x| x.powf(-0.5)));
     let e_inv_sqrt_diag = Array::from_diag(&e_inv_sqrt);
@@ -569,28 +569,46 @@ fn rhf_scf_linscal(
         "Iter", "E_scf", "E_tot", "ΔE", "RMS(|FPS - SPF|)"
     );
     for scf_iter in 0..=calc_sett.max_scf_iter {
-        // 1. First new Fock matrix
-        calc_new_F_matr_dir_scf(&mut F_matr, &delta_P_matr, schwarz_est_matr.as_ref().unwrap(), basis);
-        // 2. Calc E_scf
-        let E_scf_curr = calc_E_scf(&P_matr, &H_core, &F_matr);
-        scf.E_tot_conv = E_scf_curr + V_nuc;
+        if scf_iter == 0 {
+            let S_matr_inv_sqrt = inv_ssqrt(&S_matr, UPLO::Upper);
+            let F_matr_pr = S_matr_inv_sqrt.dot(&F_matr).dot(&S_matr_inv_sqrt);
 
-        let delta_E = E_scf_curr - E_scf_prev;
-        println!(
-            "{:>3} {:>20.12} {:>20.12} {}",
-            scf_iter,
-            E_scf_curr,
-            scf.E_tot_conv,
-            fmt_f64(delta_E, 20, 8, 2),
-        );
+            let (orb_ener, C_matr_MO) = F_matr_pr.eigh(UPLO::Upper).unwrap();
+            let C_matr_AO = S_matr_inv_sqrt.dot(&C_matr_MO);
 
-        // 3. Save old density matrix
-        P_matr_old = P_matr.clone();
-        // 4. Calculate new density matrix
-        P_matr = calc_new_P_matr_linscal_contravar(&P_matr, &F_matr, &S_matr, &S_matr_inv);
-        // 5. Calculate calculate ΔP matrix
-        delta_P_matr = (&P_matr - &P_matr_old).to_owned();
-        E_scf_prev = E_scf_curr;
+            calc_P_matr_rhf(&mut P_matr, &C_matr_AO, basis.no_occ());
+            println!("Guess P_matr:\n {:12.6}", &P_matr);
+            println!("Eigenvalues of guess: {:12.6}", &P_matr.eigh(UPLO::Upper).unwrap().0);
+            delta_P_matr = P_matr.clone();
+        } else {
+            // 1. First new Fock matrix
+            calc_new_F_matr_dir_scf(
+                &mut F_matr,
+                &delta_P_matr,
+                schwarz_est_matr.as_ref().unwrap(),
+                basis,
+            );
+            // 2. Calc E_scf
+            let E_scf_curr = calc_E_scf(&P_matr, &H_core, &F_matr);
+            scf.E_tot_conv = E_scf_curr + V_nuc;
+
+            let delta_E = E_scf_curr - E_scf_prev;
+            println!(
+                "{:>3} {:>20.12} {:>20.12} {}",
+                scf_iter,
+                E_scf_curr,
+                scf.E_tot_conv,
+                fmt_f64(delta_E, 20, 8, 2),
+            );
+
+            // 3. Save old density matrix
+            P_matr_old = P_matr.clone();
+            // 4. Calculate new density matrix
+            P_matr = calc_new_P_matr_linscal_contravar(&P_matr, &F_matr, &S_matr, &S_matr_inv);
+            // 5. Calculate calculate ΔP matrix
+            delta_P_matr = (&P_matr - &P_matr_old).to_owned();
+            E_scf_prev = E_scf_curr;
+        }
     }
 }
 
@@ -602,7 +620,7 @@ fn calc_new_P_matr_linscal_contravar(
     S_matr: &Array2<f64>,
     S_matr_inv: &Array2<f64>,
 ) -> Array2<f64> {
-    const STEP_WIDTH: f64 = 0.0005;
+    const STEP_WIDTH: f64 = 0.000_001;
 
     let energy_grad = calc_energy_gradient_p_matr(F_matr, P_matr_curr, S_matr);
     P_matr_curr - STEP_WIDTH * S_matr_inv.dot(&energy_grad).dot(S_matr_inv)
@@ -665,7 +683,7 @@ mod tests {
         };
         let mut exec_times = ExecTimes::new();
 
-        let _scf = rhf_scf_normal(calc_sett, &mut exec_times, &basis, &mol);
+        let _scf = rhf_scf_normal(&calc_sett, &mut exec_times, &basis, &mol);
         println!("{:?}", _scf);
     }
 
@@ -686,7 +704,7 @@ mod tests {
         };
         let mut exec_times = ExecTimes::new();
 
-        let _scf = rhf_scf_normal(calc_sett, &mut exec_times, &basis, &mol);
+        let _scf = rhf_scf_normal(&calc_sett, &mut exec_times, &basis, &mol);
         println!("{:?}", _scf);
     }
 
@@ -707,10 +725,10 @@ mod tests {
         };
         let mut exec_times = ExecTimes::new();
 
-        let _scf = rhf_scf_normal(calc_sett, &mut exec_times, &basis, &mol);
+        let _scf = rhf_scf_normal(&calc_sett, &mut exec_times, &basis, &mol);
         // println!("{:?}", _scf);
     }
-    
+
     #[test]
     fn test_rhf_dir_linscal() {
         let mol = Molecule::new("data/xyz/water90.xyz", 0);

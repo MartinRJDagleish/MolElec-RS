@@ -57,7 +57,7 @@ fn main() {
         },
     };
     
-    let _scf = rhf_scf_normal(calc_sett, &mut exec_times, &basis, &mol);
+    let _scf = rhf_scf_normal(&calc_sett, &mut exec_times, &basis, &mol);
     exec_times.stop("RHF noDIIS");
     
 

@@ -6,6 +6,7 @@ use ndarray_linalg::SolveH;
 use std::ops::{Index, IndexMut};
 
 pub(crate) mod rhf;
+pub(crate) mod uhf;
 
 pub(crate) enum CalcType {
     RHF,
