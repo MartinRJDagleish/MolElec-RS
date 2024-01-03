@@ -103,20 +103,6 @@ impl BasisSetDefShell {
 
         (shell_s, shell_p)
     }
-
-    // pub fn pgto_exps(&self) -> &[f64] {
-    //     &self.pgto_exps
-    // }
-    //
-    // pub fn pgto_coeffs(&self) -> &[f64] {
-    //     &self.pgto_coeffs
-    // }
-    // pub fn no_prim(&self) -> usize {
-    //     self.no_prim
-    // }
-    // pub fn ang_mom_char(&self) -> &AngMomChar {
-    //     &self.ang_mom_char
-    // }
 }
 
 impl BasisSetDefTotal {

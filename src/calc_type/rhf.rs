@@ -1,3 +1,5 @@
+use std::f32::consts::E;
+
 use crate::basisset::BasisSet;
 use crate::calc_type::{EriArr1, DIIS};
 use crate::mol_int_and_deriv::te_int::calc_schwarz_est_int;
@@ -7,9 +9,10 @@ use crate::mol_int_and_deriv::{
 };
 use crate::molecule::Molecule;
 use crate::print_utils::{fmt_f64, print_rhf::print_scf_header_and_settings, ExecTimes};
+use ndarray::linalg::general_mat_mul;
 use ndarray::parallel::prelude::*;
 use ndarray::{s, Array, Array1, Array2, Zip};
-use ndarray_linalg::{Eigh, UPLO};
+use ndarray_linalg::{Eigh, Inverse, InverseH, UPLO};
 
 use super::{CalcSettings, SCF};
 
@@ -372,7 +375,7 @@ pub(crate) fn rhf_scf_normal(
 
 fn calc_P_matr(P_matr: &mut Array2<f64>, C_matr: &Array2<f64>, no_occ: usize) {
     let C_occ = C_matr.slice(s![.., ..no_occ]);
-    P_matr.assign(&(2.0 * C_occ.dot(&C_occ.t())));
+    general_mat_mul(2.0_f64, &C_occ, &C_occ.t(), 0.0_f64, P_matr)
 }
 
 fn calc_new_F_matr_ind_scf(
@@ -441,7 +444,8 @@ fn calc_new_F_matr_dir_scf(
                                         * Schwarz_est_int[(lam, sig)]
                                         * max_dP_val;
                                     if int_est >= INT_THRSH {
-                                        let eri_val = 0.5 * calc_ERI_int_cgto(cgto1, cgto2, cgto3, cgto4);
+                                        let eri_val =
+                                            0.5 * calc_ERI_int_cgto(cgto1, cgto2, cgto3, cgto4);
 
                                         // 1. Coulomb type contribution
                                         G_matr[(mu, nu)] += delta_P_matr[(lam, sig)] * eri_val;
@@ -500,6 +504,119 @@ fn inv_ssqrt(arr2: &Array2<f64>, uplo: UPLO) -> Array2<f64> {
     let e_inv_sqrt_diag = Array::from_diag(&e_inv_sqrt);
     let result = v.dot(&e_inv_sqrt_diag).dot(&v.t());
     result
+}
+
+/// My try of a implementation of the density matrix based approach to solve the RHF SCF equations.
+/// This is NOT actually linear scaling, since I am not using any tricks to reduce the computational cost.
+/// No sparse matrices or anything like that.
+///
+/// Missing: CFMM for Coulomb and LinK for Exchange matrix
+#[allow(unused)]
+fn rhf_scf_linscal(
+    calc_sett: CalcSettings,
+    exec_times: &mut ExecTimes,
+    basis: &BasisSet,
+    mol: &Molecule,
+) {
+    print_scf_header_and_settings(&calc_sett);
+    const SHOW_ALL_CONV_CRIT: bool = false;
+
+    let mut is_scf_conv = false;
+    let mut scf = SCF::default();
+
+    let V_nuc: f64 = if mol.no_atoms() > 100 {
+        mol.calc_core_potential_par()
+    } else {
+        mol.calc_core_potential_ser()
+    };
+
+    println!("Calculating 1e integrals ...");
+    let (S_matr, H_core) = calc_1e_int_matrs(basis, mol);
+    println!("FINSIHED calculating 1e integrals ...");
+
+    let mut eri;
+    let schwarz_est_matr;
+    if calc_sett.use_direct_scf {
+        eri = None;
+
+        println!("Calculating Schwarz int estimates ...");
+        schwarz_est_matr = Some(calc_schwarz_est_int(basis));
+        println!("FINISHED Schwarz int estimates ...");
+    } else {
+        schwarz_est_matr = None;
+
+        println!("Calculating 2e integrals ...");
+        eri = Some(calc_2e_int_matr(basis));
+        println!("FINSIHED calculating 2e integrals ...");
+    }
+
+    // Init matrices for SCF loop
+    let mut E_scf_prev = 0.0;
+
+    let mut P_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
+    let mut P_matr_old = P_matr.clone();
+    let mut delta_P_matr = P_matr.clone();
+    let mut diis_str = "";
+
+    // Initial guess -> H_core
+    let mut F_matr = H_core.clone();
+
+    let S_matr_inv = S_matr.invh().unwrap();
+
+    // Print SCF iteration Header
+    println!(
+        "{:>3} {:^20} {:^20} {:^20} {:^20}",
+        "Iter", "E_scf", "E_tot", "ΔE", "RMS(|FPS - SPF|)"
+    );
+    for scf_iter in 0..=calc_sett.max_scf_iter {
+        // 1. First new Fock matrix
+        calc_new_F_matr_dir_scf(&mut F_matr, &delta_P_matr, schwarz_est_matr.as_ref().unwrap(), basis);
+        // 2. Calc E_scf
+        let E_scf_curr = calc_E_scf(&P_matr, &H_core, &F_matr);
+        scf.E_tot_conv = E_scf_curr + V_nuc;
+
+        let delta_E = E_scf_curr - E_scf_prev;
+        println!(
+            "{:>3} {:>20.12} {:>20.12} {}",
+            scf_iter,
+            E_scf_curr,
+            scf.E_tot_conv,
+            fmt_f64(delta_E, 20, 8, 2),
+        );
+
+        // 3. Save old density matrix
+        P_matr_old = P_matr.clone();
+        // 4. Calculate new density matrix
+        P_matr = calc_new_P_matr_linscal_contravar(&P_matr, &F_matr, &S_matr, &S_matr_inv);
+        // 5. Calculate calculate ΔP matrix
+        delta_P_matr = (&P_matr - &P_matr_old).to_owned();
+        E_scf_prev = E_scf_curr;
+    }
+}
+
+#[allow(unused)]
+/// Result is contravariant
+fn calc_new_P_matr_linscal_contravar(
+    P_matr_curr: &Array2<f64>,
+    F_matr: &Array2<f64>,
+    S_matr: &Array2<f64>,
+    S_matr_inv: &Array2<f64>,
+) -> Array2<f64> {
+    const STEP_WIDTH: f64 = 0.0005;
+
+    let energy_grad = calc_energy_gradient_p_matr(F_matr, P_matr_curr, S_matr);
+    P_matr_curr - STEP_WIDTH * S_matr_inv.dot(&energy_grad).dot(S_matr_inv)
+}
+
+fn calc_energy_gradient_p_matr(
+    F_matr: &Array2<f64>,
+    P_matr: &Array2<f64>,
+    S_matr: &Array2<f64>,
+) -> Array2<f64> {
+    3.0 * F_matr.dot(P_matr).dot(S_matr) + 3.0 * S_matr.dot(P_matr).dot(F_matr)
+        - 2.0 * S_matr.dot(P_matr).dot(F_matr).dot(P_matr).dot(S_matr)
+        - 2.0 * F_matr.dot(P_matr).dot(S_matr).dot(P_matr).dot(S_matr)
+        - 2.0 * S_matr.dot(P_matr).dot(S_matr).dot(P_matr).dot(F_matr)
 }
 
 #[cfg(test)]
@@ -592,5 +709,25 @@ mod tests {
 
         let _scf = rhf_scf_normal(calc_sett, &mut exec_times, &basis, &mol);
         // println!("{:?}", _scf);
+    }
+    
+    #[test]
+    fn test_rhf_dir_linscal() {
+        let mol = Molecule::new("data/xyz/water90.xyz", 0);
+        let basis = BasisSet::new("STO-3G", &mol);
+        let calc_sett = CalcSettings {
+            max_scf_iter: 100,
+            e_diff_thrsh: 1e-8,
+            commu_conv_thrsh: 1e-6,
+            use_diis: false,
+            use_direct_scf: true,
+            diis_sett: DiisSettings {
+                diis_min: 2,
+                diis_max: 6,
+            },
+        };
+        let mut exec_times = ExecTimes::new();
+
+        let _scf = rhf_scf_linscal(calc_sett, &mut exec_times, &basis, &mol);
     }
 }
