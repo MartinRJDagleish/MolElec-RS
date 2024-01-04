@@ -305,6 +305,7 @@ fn calc_new_F_matr_ind_scf_uhf(
     }
 }
 
+#[allow(unused)]
 fn calc_new_F_matr_dir_scf_uhf(
     F_matr: &mut Array2<f64>,
     delta_P_matr: &Array2<f64>,

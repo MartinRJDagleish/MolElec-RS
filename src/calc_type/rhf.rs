@@ -1,5 +1,3 @@
-use std::f32::consts::E;
-
 use crate::basisset::BasisSet;
 use crate::calc_type::{EriArr1, DIIS};
 use crate::mol_int_and_deriv::te_int::calc_schwarz_est_int;
@@ -12,8 +10,7 @@ use crate::print_utils::{fmt_f64, print_rhf::print_scf_header_and_settings, Exec
 use ndarray::linalg::general_mat_mul;
 use ndarray::parallel::prelude::*;
 use ndarray::{s, Array, Array1, Array2, Zip};
-use ndarray_linalg::{Eigh, Inverse, InverseH, UPLO};
-
+use ndarray_linalg::{Eigh, InverseH, UPLO};
 use super::{CalcSettings, SCF};
 
 /// ### Description

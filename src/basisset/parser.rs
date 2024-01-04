@@ -70,17 +70,17 @@ pub struct BasisSetDefShell {
 }
 
 impl BasisSetDefAtom {
-    pub(crate) fn no_prim_p_shell(&self, shell_idx: usize) -> usize {
-        self.no_prim_per_shell[shell_idx]
-    }
+    // pub(crate) fn no_prim_p_shell(&self, shell_idx: usize) -> usize {
+    //     self.no_prim_per_shell[shell_idx]
+    // }
 
     pub(crate) fn get_no_shells(&self) -> usize {
         self.no_prim_per_shell.len()
     }
 
-    pub(crate) fn no_prim_per_shell_iter(&self) -> std::slice::Iter<usize> {
-        self.no_prim_per_shell.iter()
-    }
+    // pub(crate) fn no_prim_per_shell_iter(&self) -> std::slice::Iter<usize> {
+    //     self.no_prim_per_shell.iter()
+    // }
 }
 
 impl BasisSetDefShell {

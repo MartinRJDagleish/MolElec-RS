@@ -4,6 +4,7 @@ use std::vec;
 
 use crate::basisset::{CGTO, PGTO};
 use crate::mol_int_and_deriv::recurrence_rel::{EHermCoeff1D, EHermCoeff3D, RHermAuxInt};
+use crate::molecule::cartesian_comp::Cartesian;
 use crate::molecule::{
     atom::Atom,
     cartesian_comp::{CC_X, CC_Y, CC_Z},
@@ -186,6 +187,107 @@ pub fn calc_pot_int_cgto(cgto1: &CGTO, cgto2: &CGTO, mol: &Molecule) -> f64 {
     pot_int
 }
 
+/// Calculate the multipole moment integral between two contracted Gaussian type orbitals (CGTOs)
+/// Here only the dipole part is computed for a given Cartesian component
+/// Source: Helgaker -- Molecular Electronic Structure Theory
+#[allow(non_snake_case, unused)]
+//TODO: [ ] combine this to compute all three components at once and return a tuple
+pub fn calc_dip_mom_int_cgto(cgto1: &CGTO, cgto2: &CGTO, cc: &Cartesian, ref_atom: &Atom) -> f64 {
+    let mut dip_mom_int = 0.0_f64;
+    let vec_BA = cgto1.centre_pos().calc_vec_to_atom(cgto2.centre_pos());
+    let ang_mom_vec1 = cgto1.ang_mom_vec();
+    let ang_mom_vec2 = cgto2.ang_mom_vec();
+    for pgto1 in cgto1.pgto_iter() {
+        for pgto2 in cgto2.pgto_iter() {
+            let E_ab = EHermCoeff3D::new(pgto1.alpha(), pgto2.alpha(), &vec_BA);
+            let vec_P = calc_vec_P(
+                pgto1.alpha(),
+                pgto2.alpha(),
+                cgto1.centre_pos(),
+                cgto2.centre_pos(),
+            );
+            let dip_mom_pgto_int =
+                calc_dip_mom_int_pgto(ang_mom_vec1, ang_mom_vec2, &E_ab, cc, &vec_P, ref_atom);
+
+            dip_mom_int += pgto1.norm_const()
+                * pgto2.norm_const()
+                * pgto1.pgto_coeff()
+                * pgto2.pgto_coeff()
+                * dip_mom_pgto_int
+                * *PI_FAC_OVERL
+                * (1.0 / (pgto1.alpha() + pgto2.alpha())).powf(1.5);
+        }
+    }
+    dip_mom_int
+}
+
+/// Calculate the multipole moment integral between two primitive Gaussian type orbitals (PGTOs)
+/// Here only the dipole part is computed for a given Cartesian component
+/// Source: Helgaker -- Molecular Electronic Structure Theory
+#[allow(non_snake_case, unused)]
+pub fn calc_dip_mom_int_pgto(
+    ang_mom_vec1: &[i32; 3],
+    ang_mom_vec2: &[i32; 3],
+    E_ab: &EHermCoeff3D,
+    cc: &Cartesian,
+    vec_P: &Array1<f64>,
+    ref_atom: &Atom,
+) -> f64 {
+    let dip_comp;
+    let S_comp;
+
+    match cc {
+        Cartesian::X => {
+            dip_comp = E_ab
+                .E_ij
+                .calc_recurr_rel(ang_mom_vec1[CC_X], ang_mom_vec2[CC_X], 1, 0)
+                + (vec_P[CC_X] - ref_atom[CC_X])
+                    * E_ab
+                        .E_ij
+                        .calc_recurr_rel(ang_mom_vec1[CC_X], ang_mom_vec2[CC_X], 0, 0);
+            S_comp = E_ab
+                .E_kl
+                .calc_recurr_rel(ang_mom_vec1[CC_Y], ang_mom_vec2[CC_Y], 0, 0)
+                * E_ab
+                    .E_mn
+                    .calc_recurr_rel(ang_mom_vec1[CC_Z], ang_mom_vec2[CC_Z], 0, 0);
+        }
+        Cartesian::Y => {
+            dip_comp = E_ab
+                .E_kl
+                .calc_recurr_rel(ang_mom_vec1[CC_Y], ang_mom_vec2[CC_Y], 1, 0)
+                + (vec_P[CC_Y] - ref_atom[CC_Y])
+                    * E_ab
+                        .E_kl
+                        .calc_recurr_rel(ang_mom_vec1[CC_Y], ang_mom_vec2[CC_Y], 0, 0);
+            S_comp = E_ab
+                .E_ij
+                .calc_recurr_rel(ang_mom_vec1[CC_X], ang_mom_vec2[CC_X], 0, 0)
+                * E_ab
+                    .E_mn
+                    .calc_recurr_rel(ang_mom_vec1[CC_Z], ang_mom_vec2[CC_Z], 0, 0);
+        }
+        Cartesian::Z => {
+            dip_comp = E_ab
+                .E_mn
+                .calc_recurr_rel(ang_mom_vec1[CC_Z], ang_mom_vec2[CC_Z], 1, 0)
+                + (vec_P[CC_Z] - ref_atom[CC_Z])
+                    * E_ab
+                        .E_mn
+                        .calc_recurr_rel(ang_mom_vec1[CC_Z], ang_mom_vec2[CC_Z], 0, 0);
+            S_comp = E_ab
+                .E_ij
+                .calc_recurr_rel(ang_mom_vec1[CC_X], ang_mom_vec2[CC_X], 0, 0)
+                * E_ab
+                    .E_kl
+                    .calc_recurr_rel(ang_mom_vec1[CC_Y], ang_mom_vec2[CC_Y], 0, 0);
+        }
+    }
+
+    // Here the PI factor is missing, but it is added in the CGTO function
+    dip_comp * S_comp
+}
+
 /// Calculate the Gaussian product center using two atoms and the exponential factors α_1 and α_2
 ///
 /// Formula: vec_P = (α_1 * vec_A + α_2 * vec_B ) / p
@@ -200,8 +302,6 @@ pub(crate) fn calc_vec_P(alpha1: f64, alpha2: f64, atom_A: &Atom, atom_B: &Atom)
     let vec_B = array![atom_B[CC_X], atom_B[CC_Y], atom_B[CC_Z]];
     (alpha1 * vec_A + alpha2 * vec_B) * oop
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -337,4 +437,22 @@ mod tests {
 
         assert_relative_eq!(pot_val, POT_VAL_REF_2, epsilon = 1e-8);
     }
+    
+
+    #[test]
+    fn test_calc_dip_mom_int_cgto_test1() {
+        let mol = Molecule::new("data/xyz/water90.xyz", 0);
+        let atom = Atom::new(0.0, 0.0, 0.0, 8, crate::molecule::PseElemSym::O);
+        let ref_atom = mol.atoms_iter().skip(1).next().unwrap();
+        let (cgto1, cgto2) = init_two_same_cgtos(&atom);
+
+        let cc = Cartesian::X;
+        let dip_mom_val1 = calc_dip_mom_int_cgto(&cgto1, &cgto2, &cc, &ref_atom);
+        println!("Dip Mom val 1: {}", dip_mom_val1);
+        // Reference value computed with TCF programme
+        // const POT_VAL_REF_2: f64 = -7.4440339458;
+
+        // assert_relative_eq!(pot_val, POT_VAL_REF_2, epsilon = 1e-8);
+    }
+    
 }

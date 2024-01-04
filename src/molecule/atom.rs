@@ -1,4 +1,4 @@
-use crate::molecule::{PseElemSym, PSE_ELEM_SYMS_STR};
+use crate::molecule::PseElemSym;
 use std::ops::{Index, IndexMut};
 
 #[rustfmt::skip]
@@ -90,9 +90,9 @@ impl Atom {
         }
     }
 
-    pub fn z_val_to_sym_str(z_val: usize) -> String {
-        PSE_ELEM_SYMS_STR[z_val].to_string()
-    }
+    // pub fn z_val_to_sym_str(z_val: usize) -> String {
+    //     PSE_ELEM_SYMS_STR[z_val].to_string()
+    // }
     
     pub(crate) fn pse_sym(&self) -> &PseElemSym {
         &self.pse_sym
