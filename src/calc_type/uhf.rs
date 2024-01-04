@@ -9,8 +9,8 @@ use crate::{
     molecule::Molecule,
     print_utils::{fmt_f64, print_rhf::print_scf_header_and_settings},
 };
-use ndarray::{linalg::general_mat_mul, s, Array1, Array2, Zip};
 use ndarray::parallel::prelude::*;
+use ndarray::{linalg::general_mat_mul, s, Array1, Array2, Zip};
 use ndarray_linalg::{Eigh, UPLO};
 
 #[allow(unused)]
@@ -51,7 +51,7 @@ fn uhf_scf_normal(
     let (S_matr, H_core) = calc_1e_int_matrs(basis, mol);
     println!("FINSIHED calculating 1e integrals ...");
 
-    let mut eri_opt;
+    let eri_opt;
     let schwarz_est_matr;
     if calc_sett.use_direct_scf {
         eri_opt = None;
@@ -90,26 +90,15 @@ fn uhf_scf_normal(
 
     // Initial guess -> H_core
     let mut F_matr_alph = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
-    calc_new_F_matr_ind_scf_uhf(
-        &mut F_matr_alph,
-        &H_core,
-        &P_matr_alph,
-        &P_matr_beta,
-        eri_opt.as_ref().unwrap(),
-        true,
-    );
     let mut F_matr_beta = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
-    calc_new_F_matr_ind_scf_uhf(
-        &mut F_matr_beta,
-        &H_core,
-        &P_matr_alph,
-        &P_matr_beta,
-        eri_opt.as_ref().unwrap(),
-        false,
-    );
 
     let mut F_matr_pr_alph;
     let mut F_matr_pr_beta;
+
+    println!(
+        "{:>3} {:^20} {:^20} {:^20} {:^20}",
+        "Iter", "E_scf", "E_tot", "ΔE", "RMS(|FPS - SPF|)"
+    );
 
     for scf_iter in 1..=calc_sett.max_scf_iter {
         /// direct or indirect scf
@@ -144,7 +133,7 @@ fn uhf_scf_normal(
             &F_matr_beta,
         );
         scf.E_tot_conv = E_scf_curr + V_nuc;
-        let fps_comm_alph = DIIS::calc_FPS_comm(&F_matr_alph, &P_matr_beta, &S_matr);
+        let fps_comm_alph = DIIS::calc_FPS_comm(&F_matr_alph, &P_matr_alph, &S_matr);
         let fps_comm_beta = DIIS::calc_FPS_comm(&F_matr_beta, &P_matr_beta, &S_matr);
 
         F_matr_pr_alph = S_matr_inv_sqrt.dot(&F_matr_alph).dot(&S_matr_inv_sqrt);
@@ -183,6 +172,8 @@ fn uhf_scf_normal(
             + (fps_comm_beta.par_iter().map(|x| x * x).sum::<f64>() / fps_comm_beta.len() as f64)
                 .sqrt())
             * 0.5;
+
+        // let rms_comm_val = 0.0;
 
         println!(
             "{:>3} {:>20.12} {:>20.12} {} {} {:>10} ",
@@ -228,9 +219,8 @@ fn init_diag_F_matr(
     S_matr_inv_sqrt: &Array2<f64>,
 ) -> (Array1<f64>, Array2<f64>) {
     let F_matr_pr = S_matr_inv_sqrt.dot(F_matr).dot(S_matr_inv_sqrt);
-    let (orb_ener, C_matr) = F_matr_pr.eigh(UPLO::Upper).unwrap();
-    let C_matr = S_matr_inv_sqrt.dot(&C_matr);
-    (orb_ener, C_matr)
+    let (orb_ener, C_matr_MO) = F_matr_pr.eigh(UPLO::Upper).unwrap();
+    (orb_ener, C_matr_MO)
 }
 
 fn build_P_matr_uhf(P_matr_spin: &mut Array2<f64>, C_matr_MO_spin: &Array2<f64>, n_orb: usize) {
@@ -278,11 +268,11 @@ fn calc_new_F_matr_ind_scf_uhf(
         for mu in 0..no_bf {
             for nu in 0..=mu {
                 for lambda in 0..no_bf {
-                    for sigma in 0..=lambda {
+                    for sigma in 0..no_bf {
                         let coul_P_mat_val =
                             P_matr_alph[(lambda, sigma)] + P_matr_beta[(lambda, sigma)];
                         F_matr_spin[(mu, nu)] += coul_P_mat_val * eri[(mu, nu, lambda, sigma)]
-                            + eri[(mu, sigma, lambda, nu)] * P_matr_alph[(lambda, sigma)];
+                            - eri[(mu, sigma, lambda, nu)] * P_matr_alph[(lambda, sigma)];
                     }
                 }
                 F_matr_spin[(nu, mu)] = F_matr_spin[(mu, nu)];
@@ -293,11 +283,11 @@ fn calc_new_F_matr_ind_scf_uhf(
         for mu in 0..no_bf {
             for nu in 0..=mu {
                 for lambda in 0..no_bf {
-                    for sigma in 0..=lambda {
+                    for sigma in 0..no_bf {
                         let coul_P_mat_val =
                             P_matr_alph[(lambda, sigma)] + P_matr_beta[(lambda, sigma)];
                         F_matr_spin[(mu, nu)] += coul_P_mat_val * eri[(mu, nu, lambda, sigma)]
-                            + eri[(mu, sigma, lambda, nu)] * P_matr_beta[(lambda, sigma)];
+                            - eri[(mu, sigma, lambda, nu)] * P_matr_beta[(lambda, sigma)];
                     }
                 }
                 F_matr_spin[(nu, mu)] = F_matr_spin[(mu, nu)];
@@ -338,4 +328,23 @@ mod tests {
         let mut exec_times = ExecTimes::new();
         uhf_scf_normal(&calc_sett, &mut exec_times, &mol, &basis);
     }
+
+    // #[test]
+    // fn test_uhf_diis_indir_scf() {
+    //     let mol = Molecule::new("data/xyz/water90.xyz", 0);
+    //     let basis = BasisSet::new("STO-3G", &mol);
+    //     let calc_sett = CalcSettings {
+    //         max_scf_iter: 100,
+    //         e_diff_thrsh: 1e-8,
+    //         commu_conv_thrsh: 1e-8,
+    //         use_diis: true,
+    //         use_direct_scf: false,
+    //         diis_sett: DiisSettings {
+    //             diis_min: 2,
+    //             diis_max: 6,
+    //         },
+    //     };
+    //     let mut exec_times = ExecTimes::new();
+    //     uhf_scf_normal(&calc_sett, &mut exec_times, &mol, &basis);
+    // }
 }
