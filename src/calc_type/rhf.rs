@@ -350,9 +350,11 @@ pub(crate) fn rhf_scf_normal(
             {
                 scf.tot_scf_iter = scf_iter;
                 scf.E_scf_conv = E_scf_curr;
-                scf.C_matr_conv = C_matr_AO.clone();
-                scf.P_matr_conv = P_matr.clone();
-                scf.orb_energies_conv = orb_ener.clone();
+                scf.C_matr_conv_alph = C_matr_AO;
+                scf.P_matr_conv_alph = P_matr;
+                scf.C_matr_conv_beta = None;
+                scf.P_matr_conv_beta = None;
+                scf.orb_E_conv_alph = orb_ener.clone();
                 println!("\nSCF CONVERGED!\n");
                 is_scf_conv = true;
                 break;
@@ -373,7 +375,7 @@ pub(crate) fn rhf_scf_normal(
         println!("{:*<55}", "");
         println!("* {:^51} *", "FINAL RESULTS");
         println!("{:*<55}", "");
-        println!("  {:^50}", "SCF (in a.u.)");
+        println!("  {:^50}", "RHF SCF (in a.u.)");
         println!("  {:=^50}  ", "");
         println!("  {:<25}{:>25}", "Total SCF iterations:", scf.tot_scf_iter);
         println!("  {:<25}{:>25.18}", "Final SCF energy:", scf.E_scf_conv);

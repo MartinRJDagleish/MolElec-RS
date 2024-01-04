@@ -39,12 +39,15 @@ pub struct SCF {
     tot_scf_iter: usize,
     pub E_tot_conv: f64,
     pub E_scf_conv: f64,
-    C_matr_conv: Array2<f64>,
-    P_matr_conv: Array2<f64>, // [ ] TODO: pot. change this to sparse matrix
-    orb_energies_conv: Array1<f64>,
+    C_matr_conv_alph: Array2<f64>,
+    P_matr_conv_alph: Array2<f64>, // [ ] TODO: pot. change this to sparse matrix
+    C_matr_conv_beta: Option<Array2<f64>>,
+    P_matr_conv_beta: Option<Array2<f64>>, // [ ] TODO: pot. change this to sparse matrix
+    orb_E_conv_alph: Array1<f64>,
+    orb_E_conv_beta: Option<Array1<f64>>
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default,Clone)]
 pub struct DIIS {
     // Better approach
     pub diis_settings: DiisSettings,
