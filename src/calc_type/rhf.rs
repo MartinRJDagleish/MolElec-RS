@@ -1,3 +1,4 @@
+use super::{CalcSettings, SCF};
 use crate::basisset::BasisSet;
 use crate::calc_type::{EriArr1, DIIS};
 use crate::mol_int_and_deriv::te_int::calc_schwarz_est_int;
@@ -9,9 +10,8 @@ use crate::molecule::Molecule;
 use crate::print_utils::{fmt_f64, print_rhf::print_scf_header_and_settings, ExecTimes};
 use ndarray::linalg::general_mat_mul;
 use ndarray::parallel::prelude::*;
-use ndarray::{s, Array, Array1, Array2, Zip};
+use ndarray::{arr2, s, Array, Array1, Array2, Zip};
 use ndarray_linalg::{Eigh, InverseH, UPLO};
-use super::{CalcSettings, SCF};
 
 /// ### Description
 /// Calculate the 1e integrals for the given basis set and molecule.
@@ -279,6 +279,72 @@ pub(crate) fn rhf_scf_normal(
             C_matr_AO = S_matr_inv_sqrt.dot(&C_matr_MO);
 
             calc_P_matr_rhf(&mut P_matr, &C_matr_AO, basis.no_occ());
+            ///// Quick test if this is the correct SAD P_matr for H2O RHF in STO-3G basis
+            // P_matr = arr2(&[
+            //     [
+            //         2.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //     ],
+            //     [
+            //         0.0000000000,
+            //         2.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //     ],
+            //     [
+            //         0.0000000000,
+            //         0.0000000000,
+            //         1.3333333333,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //     ],
+            //     [
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         1.3333333333,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //     ],
+            //     [
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         1.3333333333,
+            //         0.0000000000,
+            //         0.0000000000,
+            //     ],
+            //     [
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         1.0000000000,
+            //         0.0000000000,
+            //     ],
+            //     [
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         0.0000000000,
+            //         1.0000000000,
+            //     ],
+            // ]);
             if calc_sett.use_direct_scf {
                 delta_P_matr = Some(P_matr.clone());
             }
@@ -739,6 +805,26 @@ mod tests {
 
         let _scf = rhf_scf_normal(&calc_sett, &mut exec_times, &basis, &mol);
         // println!("{:?}", _scf);
+    }
+
+    #[test]
+    fn test_rhf_indir_diis_sad() {
+        let mol = Molecule::new("data/xyz/water90.xyz", 0);
+        let basis = BasisSet::new("STO-3G", &mol);
+        let calc_sett = CalcSettings {
+            max_scf_iter: 100,
+            e_diff_thrsh: 1e-8,
+            commu_conv_thrsh: 1e-6,
+            use_diis: true,
+            use_direct_scf: false,
+            diis_sett: DiisSettings {
+                diis_min: 2,
+                diis_max: 6,
+            },
+        };
+        let mut exec_times = ExecTimes::new();
+
+        let _scf = rhf_scf_normal(&calc_sett, &mut exec_times, &basis, &mol);
     }
 
     // #[test]
