@@ -1,8 +1,8 @@
 use std::{collections::HashMap, time::Instant};
 
-pub mod print_rhf;
+pub mod print_scf;
 
-pub fn print_logo() {
+pub fn print_header_logo() {
     //     const HEADER_V1: &str = r#"
     // ___  ___      _   _____ _            ______  _____
     // |  \/  |     | | |  ___| |           | ___ \/  ___|
@@ -80,9 +80,10 @@ pub(crate) fn fmt_f64(num: f64, width: usize, precision: usize, exp_pad: usize) 
     let exp = num.split_off(num.find('e').unwrap());
 
     let (sign, exp) = if exp.starts_with("e-") {
-        ('-', &exp[2..])
+        // ('-', &exp[2..])
+        ('-', exp.strip_prefix("e-").unwrap())
     } else {
-        ('+', &exp[1..])
+        ('+', exp.strip_prefix('e').unwrap())
     };
     num.push_str(&format!("e{}{:0>pad$}", sign, exp, pad = exp_pad));
 
@@ -112,7 +113,7 @@ impl ExecTimes {
         }
     }
 
-    pub fn print(&self) {
+    pub fn print_wo_order(&self) {
         print_header_for_section("Execution times");
         for (name, timings) in &self.timings_map {
             let exec_time = timings[1].duration_since(timings[0]);

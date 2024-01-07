@@ -5,16 +5,27 @@ use ndarray::{Array1, Array2, Zip};
 use ndarray_linalg::SolveH;
 use std::ops::{Index, IndexMut};
 
-pub(crate) mod rhf;
-pub(crate) mod uhf;
-pub(crate) mod guess;
+pub mod rhf;
+pub mod uhf;
+pub mod guess;
 
-pub(crate) enum CalcType {
+pub(crate) enum Reference {
     RHF,
     UHF,
     ROHF,
 }
 
+// trait HF {
+//     fn run_scf(
+//         calc_sett: &CalcSettings,
+//         exec_times: &mut crate::print_utils::ExecTimes,
+//         basis: &crate::basisset::BasisSet,
+//         mol: &crate::molecule::Molecule,
+//     ) -> SCF;
+//     
+// }
+//
+#[derive(Debug)]
 pub struct CalcSettings {
     pub max_scf_iter: usize,
     pub e_diff_thrsh: f64,
@@ -33,6 +44,55 @@ pub struct DiisSettings {
 #[derive(Debug, Clone)]
 pub struct EriArr1 {
     eri_arr: Array1<f64>,
+}
+
+pub struct HFMatrices {
+    //---------------------------------
+    /// 1. Constant matrices after the first SCF iteration
+    S_matr: Array2<f64>,
+    S_matr_inv_sqrt: Array2<f64>,
+    T_matr: Array2<f64>,
+    V_matr: Array2<f64>,
+    H_core_matr: Array2<f64>,
+    //---------------------------------
+    
+    //---------------------------------
+    /// 2. ERI 
+    //---------------------------------
+    // Option -> Direct vs. indirect SCF
+    eri_arr: Option<EriArr1>,
+    //---------------------------------
+    
+    //---------------------------------
+    // 3. Mutable matrices during iterations
+    //---------------------------------
+    // 3.1 Current iteration
+    //---------------------------------
+    C_matr_alpha: Array2<f64>,        
+    P_matr_alpha: Array2<f64>, // [ ] TODO: pot. change this to sparse matrix
+    // Options -> RHF, UHF, ROHF 
+    C_matr_beta: Option<Array2<f64>>, 
+    P_matr_beta: Option<Array2<f64>>, // [ ] TODO: pot. change this to sparse matrix
+    
+    F_matr_alpha: Array2<f64>,
+    F_matr_pr_alpha: Array2<f64>,
+    // Options -> RHF, UHF, ROHF 
+    F_matr_beta: Option<Array2<f64>>,
+    F_matr_pr_beta: Option<Array2<f64>>,
+    //---------------------------------
+    
+    //---------------------------------
+    // 3.2 Previous iteration
+    //---------------------------------
+    P_matr_prev_alpha: Array2<f64>, 
+    P_matr_prev_beta: Option<Array2<f64>>,
+
+    //---------------------------------
+    // 3.3 For direct SCF
+    //---------------------------------
+    delta_P_matr_alpha: Option<Array2<f64>>, 
+    // for UHF 
+    delta_P_matr_beta: Option<Array2<f64>>,
 }
 
 #[derive(Debug, Default)]

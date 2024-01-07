@@ -1,26 +1,31 @@
 use super::{CalcSettings, SCF};
-use crate::basisset::BasisSet;
-use crate::calc_type::{EriArr1, DIIS};
-use crate::mol_int_and_deriv::te_int::calc_schwarz_est_int;
-use crate::mol_int_and_deriv::{
-    oe_int::{calc_kinetic_int_cgto, calc_overlap_int_cgto, calc_pot_int_cgto},
-    te_int::calc_ERI_int_cgto,
+use crate::{
+    basisset::BasisSet,
+    calc_type::{EriArr1, DIIS},
+    mol_int_and_deriv::{
+        oe_int::{calc_kinetic_int_cgto, calc_overlap_int_cgto, calc_pot_int_cgto},
+        te_int::{calc_ERI_int_cgto, calc_schwarz_est_int},
+    },
+    molecule::Molecule,
+    print_utils::{fmt_f64, print_scf::print_scf_header_and_settings, ExecTimes},
 };
-use crate::molecule::Molecule;
-use crate::print_utils::{fmt_f64, print_rhf::print_scf_header_and_settings, ExecTimes};
-use ndarray::linalg::general_mat_mul;
-use ndarray::parallel::prelude::*;
-use ndarray::{s, Array, Array1, Array2, Zip};
-use ndarray_linalg::{Eigh, UPLO, InverseH};
+
+use ndarray::{linalg::general_mat_mul, parallel::prelude::*, prelude::*, Zip};
+use ndarray_linalg::{Eigh, InverseH, UPLO};
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RHF {
     // Temp. matrices
     P_matr_old: Array2<f64>,
-    E_scf_old: f64,
+    // E_scf_old: f64,
 }
 
 impl RHF {
+    
+    // pub init_calc() {
+    //     
+    // }
+
     /// ### Description
     /// Calculate the 1e integrals for the given basis set and molecule.
     /// Returns a tuple of the overlap, kinetic and potential energy matrices.
@@ -124,6 +129,7 @@ impl RHF {
         eri
     }
 
+    
     /// This is the main RHF SCF function to be called and run the RHF SCF calculation
     /// ## Options:
     /// - DIIS
@@ -135,7 +141,7 @@ impl RHF {
         basis: &BasisSet,
         mol: &Molecule,
     ) -> SCF {
-        print_scf_header_and_settings(&calc_sett, crate::calc_type::CalcType::RHF);
+        print_scf_header_and_settings(&calc_sett, crate::calc_type::Reference::RHF);
         const SHOW_ALL_CONV_CRIT: bool = false;
 
         let mut is_scf_conv = false;
@@ -392,6 +398,278 @@ impl RHF {
         scf
     }
 
+
+
+    
+    ////////////////////// BACKUP before rewrite
+    // /// This is the main RHF SCF function to be called and run the RHF SCF calculation
+    // /// ## Options:
+    // /// - DIIS
+    // /// - direct vs. indirect SCF
+    // #[allow(unused)]
+    // pub fn run_scf(
+    //     calc_sett: &CalcSettings,
+    //     exec_times: &mut ExecTimes,
+    //     basis: &BasisSet,
+    //     mol: &Molecule,
+    // ) -> SCF {
+    //     print_scf_header_and_settings(&calc_sett, crate::calc_type::Reference::RHF);
+    //     const SHOW_ALL_CONV_CRIT: bool = false;
+    //
+    //     let mut is_scf_conv = false;
+    //     let mut scf = SCF::default();
+    //     let mut diis: Option<DIIS> = if calc_sett.use_diis {
+    //         Some(DIIS::new(
+    //             &calc_sett.diis_sett,
+    //             [basis.no_bf(), basis.no_bf()],
+    //         ))
+    //     } else {
+    //         None
+    //     };
+    //
+    //     let V_nuc: f64 = if mol.no_atoms() > 100 {
+    //         mol.calc_core_potential_par()
+    //     } else {
+    //         mol.calc_core_potential_ser()
+    //     };
+    //
+    //     println!("Calculating 1e integrals ...");
+    //     let (S_matr, H_core) = Self::calc_1e_int_matrs(basis, mol);
+    //     println!("FINSIHED calculating 1e integrals ...");
+    //
+    //     let mut eri_opt;
+    //     let schwarz_est_matr;
+    //     if calc_sett.use_direct_scf {
+    //         eri_opt = None;
+    //
+    //         println!("Calculating Schwarz int estimates ...");
+    //         schwarz_est_matr = Some(calc_schwarz_est_int(basis));
+    //         println!("FINISHED Schwarz int estimates ...");
+    //     } else {
+    //         schwarz_est_matr = None;
+    //
+    //         println!("Calculating 2e integrals ...");
+    //         eri_opt = Some(Self::calc_2e_int_matr(basis));
+    //         println!("FINSIHED calculating 2e integrals ...");
+    //     }
+    //
+    //     let S_matr_inv_sqrt = Self::inv_ssqrt(&S_matr, UPLO::Upper);
+    //
+    //     // Init matrices for SCF loop
+    //     let mut C_matr_AO;
+    //     let mut C_matr_MO;
+    //     let mut orb_ener;
+    //     let mut E_scf_prev = 0.0;
+    //
+    //     let mut P_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
+    //     let mut P_matr_old = P_matr.clone();
+    //     let mut delta_P_matr = None;
+    //     // if calc_sett.use_direct_scf {
+    //     //     delta_P_matr = Some(P_matr.clone());
+    //     // } else {
+    //     //     delta_P_matr = None;
+    //     // }
+    //     // let mut delta_P_matr: Option<Array2<f64>> = Some(P_matr.clone());
+    //
+    //     let mut F_matr_pr;
+    //     let mut diis_str = "";
+    //
+    //     // Initial guess -> H_core
+    //     let mut F_matr = H_core.clone();
+    //
+    //     // Print SCF iteration Header
+    //     match SHOW_ALL_CONV_CRIT {
+    //         true => {
+    //             println!(
+    //                 "{:>3} {:^20} {:^20} {:^20} {:^20} {:^20}",
+    //                 "Iter", "E_scf", "E_tot", "RMS(P)", "ΔE", "RMS(|FPS - SPF|)"
+    //             );
+    //         }
+    //         false => {
+    //             println!(
+    //                 "{:>3} {:^20} {:^20} {:^20} {:^20}",
+    //                 "Iter", "E_scf", "E_tot", "ΔE", "RMS(|FPS - SPF|)"
+    //             );
+    //         }
+    //     }
+    //     for scf_iter in 0..=calc_sett.max_scf_iter {
+    //         if scf_iter == 0 {
+    //             F_matr_pr = S_matr_inv_sqrt.dot(&F_matr).dot(&S_matr_inv_sqrt);
+    //
+    //             (orb_ener, C_matr_MO) = F_matr_pr.eigh(UPLO::Upper).unwrap();
+    //             C_matr_AO = S_matr_inv_sqrt.dot(&C_matr_MO);
+    //
+    //             Self::calc_P_matr_rhf(&mut P_matr, &C_matr_AO, basis.no_occ());
+    //             ///// Quick test if this is the correct SAD P_matr for H2O RHF in STO-3G basis
+    //             // P_matr = arr2(&[
+    //             //     [
+    //             //         2.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //     ],
+    //             //     [
+    //             //         0.0000000000,
+    //             //         2.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //     ],
+    //             //     [
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         1.3333333333,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //     ],
+    //             //     [
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         1.3333333333,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //     ],
+    //             //     [
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         1.3333333333,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //     ],
+    //             //     [
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         1.0000000000,
+    //             //         0.0000000000,
+    //             //     ],
+    //             //     [
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         0.0000000000,
+    //             //         1.0000000000,
+    //             //     ],
+    //             // ]);
+    //             if calc_sett.use_direct_scf {
+    //                 delta_P_matr = Some(P_matr.clone());
+    //             }
+    //         } else {
+    //             /// direct or indirect scf
+    //             match eri_opt {
+    //                 Some(ref eri) => {
+    //                     Self::calc_new_F_matr_ind_scf_rhf(&mut F_matr, &H_core, &P_matr, eri);
+    //                 }
+    //                 None => {
+    //                     Self::calc_new_F_matr_dir_scf_rhf(
+    //                         &mut F_matr,
+    //                         delta_P_matr.as_ref().unwrap(),
+    //                         schwarz_est_matr.as_ref().unwrap(),
+    //                         basis,
+    //                     );
+    //                 }
+    //             }
+    //             let E_scf_curr = Self::calc_E_scf_rhf(&P_matr, &H_core, &F_matr);
+    //             scf.E_tot_conv = E_scf_curr + V_nuc;
+    //             let fps_comm = DIIS::calc_FPS_comm(&F_matr, &P_matr, &S_matr);
+    //
+    //             F_matr_pr = S_matr_inv_sqrt.dot(&F_matr).dot(&S_matr_inv_sqrt);
+    //
+    //             if calc_sett.use_diis {
+    //                 let repl_idx = (scf_iter - 1) % calc_sett.diis_sett.diis_max; // always start with 0
+    //                 let err_matr = S_matr_inv_sqrt.dot(&fps_comm).dot(&S_matr_inv_sqrt);
+    //                 diis.as_mut()
+    //                     .unwrap()
+    //                     .push_to_ring_buf(&F_matr_pr, &err_matr, repl_idx);
+    //
+    //                 if scf_iter >= calc_sett.diis_sett.diis_min {
+    //                     let err_set_len = std::cmp::min(calc_sett.diis_sett.diis_max, scf_iter);
+    //                     F_matr_pr = diis.as_ref().unwrap().run_DIIS(err_set_len);
+    //                     diis_str = "DIIS";
+    //                 }
+    //             }
+    //
+    //             (orb_ener, C_matr_MO) = F_matr_pr.eigh(UPLO::Upper).unwrap();
+    //             C_matr_AO = S_matr_inv_sqrt.dot(&C_matr_MO);
+    //
+    //             let delta_E = E_scf_curr - E_scf_prev;
+    //             let rms_comm_val = (fps_comm.par_iter().map(|x| x * x).sum::<f64>()
+    //                 / fps_comm.len() as f64)
+    //                 .sqrt();
+    //             if SHOW_ALL_CONV_CRIT {
+    //                 let rms_p_val = Self::calc_rms_2_matr(&P_matr, &P_matr_old.clone());
+    //                 println!(
+    //                     "{:>3} {:>20.12} {:>20.12} {:>20.12} {:>20.12} {:>20.12}",
+    //                     scf_iter, E_scf_curr, scf.E_tot_conv, rms_p_val, delta_E, rms_comm_val
+    //                 );
+    //             } else {
+    //                 println!(
+    //                     "{:>3} {:>20.12} {:>20.12} {} {} {:>10} ",
+    //                     scf_iter,
+    //                     E_scf_curr,
+    //                     scf.E_tot_conv,
+    //                     fmt_f64(delta_E, 20, 8, 2),
+    //                     fmt_f64(rms_comm_val, 20, 8, 2),
+    //                     diis_str
+    //                 );
+    //                 diis_str = "";
+    //             }
+    //
+    //             if (delta_E.abs() < calc_sett.e_diff_thrsh)
+    //                 && (rms_comm_val < calc_sett.commu_conv_thrsh)
+    //             {
+    //                 scf.tot_scf_iter = scf_iter;
+    //                 scf.E_scf_conv = E_scf_curr;
+    //                 scf.C_matr_conv_alph = C_matr_AO;
+    //                 scf.P_matr_conv_alph = P_matr;
+    //                 scf.C_matr_conv_beta = None;
+    //                 scf.P_matr_conv_beta = None;
+    //                 scf.orb_E_conv_alph = orb_ener.clone();
+    //                 println!("\nSCF CONVERGED!\n");
+    //                 is_scf_conv = true;
+    //                 break;
+    //             } else if scf_iter == calc_sett.max_scf_iter {
+    //                 println!("\nSCF DID NOT CONVERGE!\n");
+    //                 break;
+    //             }
+    //             E_scf_prev = E_scf_curr;
+    //             P_matr_old = P_matr.clone();
+    //             Self::calc_P_matr_rhf(&mut P_matr, &C_matr_AO, basis.no_occ());
+    //             if calc_sett.use_direct_scf {
+    //                 delta_P_matr = Some((&P_matr - &P_matr_old).to_owned());
+    //             }
+    //         }
+    //     }
+    //
+    //     if is_scf_conv {
+    //         println!("{:*<55}", "");
+    //         println!("* {:^51} *", "FINAL RESULTS");
+    //         println!("{:*<55}", "");
+    //         println!("  {:^50}", "RHF SCF (in a.u.)");
+    //         println!("  {:=^50}  ", "");
+    //         println!("  {:<25}{:>25}", "Total SCF iterations:", scf.tot_scf_iter);
+    //         println!("  {:<25}{:>25.18}", "Final SCF energy:", scf.E_scf_conv);
+    //         println!("  {:<25}{:>25.18}", "Final tot. energy:", scf.E_tot_conv);
+    //         println!("{:*<55}", "");
+    //     }
+    //     scf
+    // }
+    //
     fn calc_P_matr_rhf(P_matr: &mut Array2<f64>, C_matr: &Array2<f64>, no_occ: usize) {
         let C_occ = C_matr.slice(s![.., ..no_occ]);
         general_mat_mul(2.0_f64, &C_occ, &C_occ.t(), 0.0_f64, P_matr)
@@ -550,7 +828,7 @@ fn rhf_scf_linscal(
     basis: &BasisSet,
     mol: &Molecule,
 ) {
-    print_scf_header_and_settings(calc_sett, crate::calc_type::CalcType::RHF);
+    print_scf_header_and_settings(calc_sett, crate::calc_type::Reference::RHF);
     const SHOW_ALL_CONV_CRIT: bool = false;
 
     let mut is_scf_conv = false;

@@ -11,7 +11,7 @@ mod mol_int_and_deriv;
 mod molecule;
 mod print_utils;
 
-use crate::{calc_type::CalcType, print_utils::print_logo};
+use crate::{calc_type::Reference, print_utils::print_header_logo};
 use basisset::BasisSet;
 use calc_type::{rhf::RHF, uhf::uhf_scf_normal, CalcSettings, DiisSettings};
 use molecule::Molecule;
@@ -23,7 +23,7 @@ fn main() {
     let mut exec_times = print_utils::ExecTimes::new();
     exec_times.start("Total");
 
-    print_logo();
+    print_header_logo();
 
     exec_times.start("Molecule");
     let mol = Molecule::new("data/xyz/water90.xyz", 0);
@@ -42,7 +42,7 @@ fn main() {
     // Calculation type
     //
     exec_times.start("RHF noDIIS");
-    let _calc_type = CalcType::RHF;
+    let _calc_type = Reference::RHF;
 
     let calc_sett = CalcSettings {
         max_scf_iter: 100,
@@ -65,5 +65,5 @@ fn main() {
     //##################################
     //###           FOOTER           ###
     //##################################
-    exec_times.print();
+    exec_times.print_wo_order();
 }

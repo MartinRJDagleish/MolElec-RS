@@ -7,11 +7,17 @@ use crate::{
     },
     mol_int_and_deriv::te_int::calc_schwarz_est_int,
     molecule::Molecule,
-    print_utils::{fmt_f64, print_rhf::print_scf_header_and_settings},
+    print_utils::{fmt_f64, print_scf::print_scf_header_and_settings},
 };
 use ndarray::parallel::prelude::*;
 use ndarray::{linalg::general_mat_mul, s, Array1, Array2, Zip};
 use ndarray_linalg::{Eigh, UPLO};
+
+pub(crate) struct UHF {
+    // Temp. matrices
+    P_matr_old: Array2<f64>,
+    E_scf_old: f64,
+}
 
 #[allow(unused)]
 pub(crate) fn uhf_scf_normal(
@@ -20,7 +26,7 @@ pub(crate) fn uhf_scf_normal(
     basis: &BasisSet,
     mol: &Molecule,
 ) -> SCF {
-    print_scf_header_and_settings(calc_sett, crate::calc_type::CalcType::UHF);
+    print_scf_header_and_settings(calc_sett, crate::calc_type::Reference::UHF);
     let mut is_scf_conv = false;
     let mut scf = SCF::default();
 
