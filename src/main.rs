@@ -13,7 +13,7 @@ mod print_utils;
 
 use crate::{calc_type::CalcType, print_utils::print_logo};
 use basisset::BasisSet;
-use calc_type::{rhf::rhf_scf_normal, uhf::uhf_scf_normal, CalcSettings, DiisSettings};
+use calc_type::{rhf::RHF, uhf::uhf_scf_normal, CalcSettings, DiisSettings};
 use molecule::Molecule;
 
 fn main() {
@@ -56,7 +56,7 @@ fn main() {
         },
     };
 
-    let _scf = rhf_scf_normal(&calc_sett, &mut exec_times, &basis, &mol);
+    let _scf = RHF::run_scf(&calc_sett, &mut exec_times, &basis, &mol);
     let _scf = uhf_scf_normal(&calc_sett, &mut exec_times, &basis, &mol);
     exec_times.stop("RHF noDIIS");
 

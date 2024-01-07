@@ -2,7 +2,7 @@ use super::{CalcSettings, EriArr1, SCF};
 use crate::{
     basisset::BasisSet,
     calc_type::{
-        rhf::{calc_1e_int_matrs, calc_2e_int_matr, inv_ssqrt},
+        rhf::RHF,
         DIIS,
     },
     mol_int_and_deriv::te_int::calc_schwarz_est_int,
@@ -46,7 +46,7 @@ pub(crate) fn uhf_scf_normal(
     };
 
     println!("Calculating 1e integrals ...");
-    let (S_matr, H_core) = calc_1e_int_matrs(basis, mol);
+    let (S_matr, H_core) = RHF::calc_1e_int_matrs(basis, mol);
     println!("FINSIHED calculating 1e integrals ...");
 
     let eri_opt;
@@ -61,11 +61,11 @@ pub(crate) fn uhf_scf_normal(
         schwarz_est_matr = None;
 
         println!("Calculating 2e integrals ...");
-        eri_opt = Some(calc_2e_int_matr(basis));
+        eri_opt = Some(RHF::calc_2e_int_matr(basis));
         println!("FINSIHED calculating 2e integrals ...\n");
     }
 
-    let S_matr_inv_sqrt = inv_ssqrt(&S_matr, UPLO::Upper);
+    let S_matr_inv_sqrt = RHF::inv_ssqrt(&S_matr, UPLO::Upper);
 
     // Init matrices for SCF loop
     let (mut orb_E_alph, mut C_matr_MO_alph) = init_diag_F_matr(&H_core, &S_matr_inv_sqrt);
