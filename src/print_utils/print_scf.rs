@@ -1,11 +1,11 @@
-use crate::calc_type::{CalcSettings, Reference};
+use crate::calc_type::{CalcSettings, HF_Ref};
 
-pub(crate) fn print_scf_header_and_settings(calc_sett: &CalcSettings, calc_type: Reference) {
+pub(crate) fn print_scf_header_and_settings(calc_sett: &CalcSettings, calc_type: HF_Ref) {
     println!("{:=>35}", "");
     match calc_type {
-        Reference::RHF => println!("{:^35}", "RHF SCF"),
-        Reference::UHF => println!("{:^35}", "UHF SCF"),
-        Reference::ROHF => println!("{:^35}", "ROHF SCF"),
+        HF_Ref::RHF_ref => println!("{:^35}", "RHF SCF"),
+        HF_Ref::UHF_ref => println!("{:^35}", "UHF SCF"),
+        HF_Ref::ROHF_ref => println!("{:^35}", "ROHF SCF"),
     }
     println!("{:=>35}", "");
     const SING_IND: &str = "  ";

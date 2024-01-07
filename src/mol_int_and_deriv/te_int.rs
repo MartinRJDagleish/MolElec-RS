@@ -184,6 +184,24 @@ pub fn calc_schwarz_est_int(basis: &BasisSet) -> Array2<f64> {
     Schwarz_est_int
 }
 
+/// |(μν|λσ)|^2 <= (μν|μν)^1/2 (λσ|λσ)^1/2 -> no distance dependence but rigourous 
+pub fn calc_schwarz_est_int_inp(schwarz_int: &mut Array2<f64>, basis: &BasisSet) {
+    for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
+        for sh_idx2 in 0..=sh_idx1 {
+            let shell2 = basis.shell(sh_idx2);
+            for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
+                let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
+                for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
+                    let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
+                    schwarz_int[(mu, nu)] =
+                        calc_ERI_int_cgto(cgto1, cgto2, cgto1, cgto2).sqrt();
+                    schwarz_int[(nu, mu)] = schwarz_int[(mu, nu)];
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

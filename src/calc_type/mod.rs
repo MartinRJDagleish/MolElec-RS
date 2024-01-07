@@ -5,14 +5,14 @@ use ndarray::{Array1, Array2, Zip};
 use ndarray_linalg::SolveH;
 use std::ops::{Index, IndexMut};
 
+pub mod guess;
 pub mod rhf;
 pub mod uhf;
-pub mod guess;
 
-pub(crate) enum Reference {
-    RHF,
-    UHF,
-    ROHF,
+pub(crate) enum HF_Ref {
+    RHF_ref,
+    UHF_ref,
+    ROHF_ref,
 }
 
 // trait HF {
@@ -22,7 +22,7 @@ pub(crate) enum Reference {
 //         basis: &crate::basisset::BasisSet,
 //         mol: &crate::molecule::Molecule,
 //     ) -> SCF;
-//     
+//
 // }
 //
 #[derive(Debug)]
@@ -46,6 +46,8 @@ pub struct EriArr1 {
     eri_arr: Array1<f64>,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Default)]
 pub struct HFMatrices {
     //---------------------------------
     /// 1. Constant matrices after the first SCF iteration
@@ -55,43 +57,48 @@ pub struct HFMatrices {
     V_matr: Array2<f64>,
     H_core_matr: Array2<f64>,
     //---------------------------------
-    
+
     //---------------------------------
-    /// 2. ERI 
+    /// 2. ERI
     //---------------------------------
     // Option -> Direct vs. indirect SCF
-    eri_arr: Option<EriArr1>,
+    eri_opt: Option<EriArr1>,
     //---------------------------------
-    
+
     //---------------------------------
     // 3. Mutable matrices during iterations
     //---------------------------------
     // 3.1 Current iteration
     //---------------------------------
-    C_matr_alpha: Array2<f64>,        
+    C_matr_MO_alpha: Array2<f64>,
+    C_matr_AO_alpha: Array2<f64>,
     P_matr_alpha: Array2<f64>, // [ ] TODO: pot. change this to sparse matrix
-    // Options -> RHF, UHF, ROHF 
-    C_matr_beta: Option<Array2<f64>>, 
+    // Options -> RHF, UHF, ROHF
+    C_matr_MO_beta: Option<Array2<f64>>,
+    C_matr_AO_beta: Option<Array2<f64>>,
     P_matr_beta: Option<Array2<f64>>, // [ ] TODO: pot. change this to sparse matrix
-    
+
     F_matr_alpha: Array2<f64>,
     F_matr_pr_alpha: Array2<f64>,
-    // Options -> RHF, UHF, ROHF 
+    orb_ener_alpha: Array1<f64>,
+    // Options -> RHF, UHF, ROHF
     F_matr_beta: Option<Array2<f64>>,
     F_matr_pr_beta: Option<Array2<f64>>,
+    orb_ener_beta: Option<Array1<f64>>,
     //---------------------------------
-    
+
     //---------------------------------
     // 3.2 Previous iteration
     //---------------------------------
-    P_matr_prev_alpha: Array2<f64>, 
+    P_matr_prev_alpha: Array2<f64>,
     P_matr_prev_beta: Option<Array2<f64>>,
 
     //---------------------------------
     // 3.3 For direct SCF
     //---------------------------------
-    delta_P_matr_alpha: Option<Array2<f64>>, 
-    // for UHF 
+    schwarz_est: Option<Array2<f64>>,
+    delta_P_matr_alpha: Option<Array2<f64>>,
+    // for UHF
     delta_P_matr_beta: Option<Array2<f64>>,
 }
 
@@ -105,10 +112,10 @@ pub struct SCF {
     C_matr_conv_beta: Option<Array2<f64>>,
     P_matr_conv_beta: Option<Array2<f64>>, // [ ] TODO: pot. change this to sparse matrix
     orb_E_conv_alph: Array1<f64>,
-    orb_E_conv_beta: Option<Array1<f64>>
+    orb_E_conv_beta: Option<Array1<f64>>,
 }
 
-#[derive(Debug, Default,Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct DIIS {
     // Better approach
     pub diis_settings: DiisSettings,
@@ -171,7 +178,7 @@ impl DIIS {
 
         // Calculate the coefficients c_vec
         let c_vec = B_matr.solveh(&sol_vec).unwrap();
-        
+
         // Calculate the new DIIS Fock matrix for new D_matr
         let no_cgtos = self.err_matr_pr_ring_buf[0].shape()[0];
         let mut _F_matr_DIIS = Array2::<f64>::zeros((no_cgtos, no_cgtos));

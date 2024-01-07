@@ -26,7 +26,7 @@ pub(crate) fn uhf_scf_normal(
     basis: &BasisSet,
     mol: &Molecule,
 ) -> SCF {
-    print_scf_header_and_settings(calc_sett, crate::calc_type::Reference::UHF);
+    print_scf_header_and_settings(calc_sett, crate::calc_type::HF_Ref::UHF_ref);
     let mut is_scf_conv = false;
     let mut scf = SCF::default();
 
