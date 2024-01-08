@@ -9,22 +9,13 @@ pub mod guess;
 pub mod rhf;
 pub mod uhf;
 
+#[allow(non_camel_case_types)]
 pub(crate) enum HF_Ref {
     RHF_ref,
     UHF_ref,
     ROHF_ref,
 }
 
-// trait HF {
-//     fn run_scf(
-//         calc_sett: &CalcSettings,
-//         exec_times: &mut crate::print_utils::ExecTimes,
-//         basis: &crate::basisset::BasisSet,
-//         mol: &crate::molecule::Molecule,
-//     ) -> SCF;
-//
-// }
-//
 #[derive(Debug)]
 pub struct CalcSettings {
     pub max_scf_iter: usize,
@@ -54,7 +45,7 @@ pub struct HFMatrices {
     S_matr: Array2<f64>,
     S_matr_inv_sqrt: Array2<f64>,
     T_matr: Array2<f64>,
-    V_matr: Array2<f64>,
+    V_ne_matr: Array2<f64>,
     H_core_matr: Array2<f64>,
     //---------------------------------
 
@@ -124,6 +115,84 @@ pub struct DIIS {
     // Original approach
     // F_matr_pr_deq: VecDeque<Array2<f64>>,
     // err_matr_pr_deq: VecDeque<Array2<f64>>,
+}
+
+impl HFMatrices {
+    pub fn new(no_bf: usize, use_direct_scf: bool, create_beta_vars: bool) -> Self {
+        let eri_arr = if use_direct_scf {
+            None
+        } else {
+            Some(EriArr1::new(no_bf))
+        };
+
+        let (
+            C_matr_MO_beta,
+            C_matr_AO_beta,
+            P_matr_beta,
+            F_matr_beta,
+            F_matr_pr_beta,
+            P_matr_prev_beta,
+            orb_ener_beta,
+        ) = if create_beta_vars {
+            (
+                Some(Array2::<f64>::zeros((no_bf, no_bf))),
+                Some(Array2::<f64>::zeros((no_bf, no_bf))),
+                Some(Array2::<f64>::zeros((no_bf, no_bf))),
+                Some(Array2::<f64>::zeros((no_bf, no_bf))),
+                Some(Array2::<f64>::zeros((no_bf, no_bf))),
+                Some(Array2::<f64>::zeros((no_bf, no_bf))),
+                Some(Array1::<f64>::zeros(no_bf)),
+            )
+        } else {
+            (None, None, None, None, None, None, None)
+        };
+
+        let (schwarz_est, delta_P_matr_alpha, delta_P_matr_beta) = if use_direct_scf {
+            (
+                Some(Array2::<f64>::zeros((no_bf, no_bf))),
+                Some(Array2::<f64>::zeros((no_bf, no_bf))),
+                if create_beta_vars {
+                    Some(Array2::<f64>::zeros((no_bf, no_bf)))
+                } else {
+                    None
+                },
+            )
+        } else {
+            (None, None, None)
+        };
+
+        Self {
+            S_matr: Array2::<f64>::zeros((no_bf, no_bf)),
+            S_matr_inv_sqrt: Array2::<f64>::zeros((no_bf, no_bf)),
+            T_matr: Array2::<f64>::zeros((no_bf, no_bf)),
+            V_ne_matr: Array2::<f64>::zeros((no_bf, no_bf)),
+            H_core_matr: Array2::<f64>::zeros((no_bf, no_bf)),
+
+            eri_opt: eri_arr,
+
+            C_matr_MO_alpha: Array2::<f64>::zeros((no_bf, no_bf)),
+            C_matr_AO_alpha: Array2::<f64>::zeros((no_bf, no_bf)),
+            P_matr_alpha: Array2::<f64>::zeros((no_bf, no_bf)),
+            F_matr_alpha: Array2::<f64>::zeros((no_bf, no_bf)),
+            F_matr_pr_alpha: Array2::<f64>::zeros((no_bf, no_bf)),
+            P_matr_prev_alpha: Array2::<f64>::zeros((no_bf, no_bf)),
+            orb_ener_alpha: Array1::<f64>::zeros(no_bf),
+
+            // UHF
+            C_matr_MO_beta,
+            C_matr_AO_beta,
+            P_matr_beta,
+            F_matr_beta,
+            F_matr_pr_beta,
+            P_matr_prev_beta,
+            orb_ener_beta,
+
+            // Direct SCF
+            schwarz_est,
+            delta_P_matr_alpha,
+            delta_P_matr_beta,
+        }
+    }
 }
 
 impl DIIS {

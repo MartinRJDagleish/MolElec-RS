@@ -8,19 +8,21 @@ use std::f64::consts::PI;
 
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
-enum BasisSetVariants {
-    STO_3G,
-    STO_6G,
+enum GaussBasisSetVars {
     _6_31G,
+    _6_311_pl_pl_G_st_st,
+    _6_311_pl_pl_G,
+    _6_311_pl_pl_G_st,
+    _6_311_pl_G_st,
     _6_311G,
+    _6_311G_d_p,
     cc_pVDZ,
     cc_pVTZ,
     def2_SVP,
     def2_TZVP,
-    _6_311_plus_plus_G,
-    _6_311_plus_plus_G_star,
-    _6_311_plus_G_star,
-    _6_311G_d_p,
+    def2_TZVPP,
+    STO_3G,
+    STO_6G,
 }
 
 /// # Basis set
