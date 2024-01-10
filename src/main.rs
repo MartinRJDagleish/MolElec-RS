@@ -33,7 +33,8 @@ fn main() {
     exec_times.stop("Molecule");
 
     exec_times.start("BasisSet");
-    let basis = BasisSet::new("STO-3G", &mol);
+    // let basis = BasisSet::new("STO-3G", &mol);
+    let basis = BasisSet::new("6-311++G**", &mol);
     exec_times.stop("BasisSet");
 
     //##################################

@@ -1,6 +1,13 @@
 use crate::molecule::PseElemSym;
 use getset::{CopyGetters, Getters};
-use std::{collections::HashMap, fs::File, io::BufRead, io::BufReader, str::FromStr};
+use std::{
+    collections::HashMap,
+    fs::{self, File},
+    io::BufRead,
+    io::BufReader,
+    path::PathBuf,
+    str::FromStr,
+};
 use strum_macros::EnumString;
 
 #[derive(Debug, Default, EnumString, Clone, Copy)]
@@ -70,38 +77,32 @@ pub struct BasisSetDefShell {
 }
 
 impl BasisSetDefAtom {
-    // pub(crate) fn no_prim_p_shell(&self, shell_idx: usize) -> usize {
-    //     self.no_prim_per_shell[shell_idx]
-    // }
-
     pub(crate) fn get_no_shells(&self) -> usize {
         self.no_prim_per_shell.len()
     }
-
-    // pub(crate) fn no_prim_per_shell_iter(&self) -> std::slice::Iter<usize> {
-    //     self.no_prim_per_shell.iter()
-    // }
 }
 
 impl BasisSetDefShell {
-    fn split_sp_shell(shell: &Self) -> (Self, Self) {
-        let mut shell_s = Self::default();
-        let mut shell_p = Self::default();
-        shell_s.ang_mom_char = AngMomChar::S;
-        shell_p.ang_mom_char = AngMomChar::P;
-        shell_s.no_prim = shell.no_prim;
-        shell_p.no_prim = shell.no_prim;
-        shell_s.pgto_exps = shell.pgto_exps.clone();
-        shell_p.pgto_exps = shell.pgto_exps.clone();
+    fn split_sp_shell(inp_shell: &Self) -> (Self, Self) {
+        let mut shelldef_s = Self::default();
+        let mut shelldef_p = Self::default();
+        shelldef_s.ang_mom_char = AngMomChar::S;
+        shelldef_p.ang_mom_char = AngMomChar::P;
+        shelldef_s.no_prim = inp_shell.no_prim;
+        shelldef_p.no_prim = inp_shell.no_prim;
+        shelldef_s.pgto_exps = inp_shell.pgto_exps.clone();
+        shelldef_p.pgto_exps = inp_shell.pgto_exps.clone();
 
-        for idx in 0..shell.pgto_coeffs.len() / 2 {
-            // even for s
-            shell_s.pgto_coeffs.push(shell.pgto_coeffs[2 * idx]);
-            // odd for p
-            shell_p.pgto_coeffs.push(shell.pgto_coeffs[2 * idx + 1]);
+        for idx in 0..inp_shell.pgto_coeffs.len() / 2 {
+            // even for S
+            shelldef_s.pgto_coeffs.push(inp_shell.pgto_coeffs[2 * idx]);
+            // odd for P
+            shelldef_p
+                .pgto_coeffs
+                .push(inp_shell.pgto_coeffs[2 * idx + 1]);
         }
 
-        (shell_s, shell_p)
+        (shelldef_s, shelldef_p)
     }
 }
 
@@ -116,34 +117,40 @@ impl BasisSetDefTotal {
         }
     }
 
+    fn find_basis_set_file_path(basis_set_name: &str) -> Result<PathBuf, &'static str> {
+        let target_file_name = format!(
+            "{}.gbs",
+            basis_set_name.replace('*', "_st").to_ascii_lowercase()
+        );
+
+        let entries =
+            fs::read_dir("data/basis").map_err(|_| "Could not read the basis set directory")?;
+
+        for entry in entries {
+            let entry = entry.map_err(|_| "Error reading directory entry")?;
+            let path = entry.path();
+            if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
+                if file_name.to_ascii_lowercase() == target_file_name {
+                    return Ok(path);
+                }
+            }
+        }
+
+        Err("Basis set not yet implemented")
+    }
     fn parse_basis_set_file_psi4(
         basis_set_name: &str,
     ) -> Result<HashMap<PseElemSym, BasisSetDefAtom>, Box<dyn std::error::Error>> {
         let mut basis_set_defs: HashMap<PseElemSym, BasisSetDefAtom> = HashMap::new();
 
-        let basis_set_file_path: &str = match basis_set_name.to_ascii_lowercase().as_str() {
-            "sto-3g" => "data/basis/sto-3g.gbs",
-            "sto-6g" => "data/basis/sto-6g.gbs",
-            "6-311g" => "data/basis/6-311g.gbs",
-            "6-311g*" => "data/basis/6-311g_st.gbs",
-            "6-311g**" => "data/basis/6-311g_st_st.gbs",
-            "def2-svp" => "data/basis/def2-svp.gbs",
-            "def2-tzvp" => "data/basis/def2-tzvp.gbs",
-            "def2-qzvp" => "data/basis/def2-qzvp.gbs",
-            "cc-pvdz" => "data/basis/cc-pvdz.gbs",
-            "cc-pvtz" => "data/basis/cc-pvtz.gbs",
-            _ => {
-                panic!("Basis set not yet implemented!");
-            }
-        };
-
-        let block_delimiter: &str = "****";
+        let basis_set_file_path = Self::find_basis_set_file_path(basis_set_name)?;
+        const BLOCK_DELIM: &str = "****"; // for .gbs files -> Psi4 format
 
         let basis_set_file = File::open(basis_set_file_path)?;
         let reader = BufReader::new(basis_set_file);
 
-        let mut basis_set_def_atom: BasisSetDefAtom = BasisSetDefAtom::default();
-        let mut basis_set_def_shell: BasisSetDefShell = BasisSetDefShell::default();
+        let mut basis_set_def_atom = BasisSetDefAtom::default();
+        let mut basis_set_def_shell = BasisSetDefShell::default();
         let mut elem_sym = PseElemSym::default();
 
         for line in reader.lines().skip(1) {
@@ -154,7 +161,7 @@ impl BasisSetDefTotal {
                 continue;
             }
             //2. Check if the line starts with the block delimiter
-            else if data_line.starts_with(block_delimiter) {
+            else if data_line.starts_with(BLOCK_DELIM) {
                 // Check if previous basis_set_def_atom is done
                 if !basis_set_def_shell.pgto_coeffs.is_empty() {
                     if let AngMomChar::SP = basis_set_def_shell.ang_mom_char {
