@@ -16,6 +16,22 @@ pub(crate) enum HF_Ref {
     ROHF_ref,
 }
 
+pub(crate) trait HF {
+    fn new(
+        basis: &crate::basisset::BasisSet,
+        calc_sett: &CalcSettings,
+        ref_type: HF_Ref,
+    ) -> Self;
+
+    fn run_scf(
+        &mut self,
+        calc_sett: &CalcSettings,
+        exec_times: &mut crate::print_utils::ExecTimes,
+        basis: &crate::basisset::BasisSet,
+        mol: &crate::molecule::Molecule,
+    ) -> SCF;
+}
+
 #[derive(Debug)]
 pub struct CalcSettings {
     pub max_scf_iter: usize,
