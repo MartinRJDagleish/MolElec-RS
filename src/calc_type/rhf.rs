@@ -1,4 +1,4 @@
-use super::{CalcSettings, HFMatrices, SCF};
+use super::{CalcSettings, HFMatrices, SCF, HF};
 use crate::{
     basisset::BasisSet,
     calc_type::{EriArr1, HF_Ref, DIIS},
@@ -25,250 +25,13 @@ pub(crate) struct RHF {
     E_tot_curr: f64,
 }
 
-impl RHF {
-    pub fn new(basis: &BasisSet, calc_sett: &CalcSettings, ref_type: HF_Ref) -> Self {
-        let create_beta_vars = match ref_type {
-            HF_Ref::RHF_ref => false,
-            HF_Ref::UHF_ref | HF_Ref::ROHF_ref => true,
-        };
-
-        Self {
-            hf_matrs: HFMatrices::new(basis.no_bf(), calc_sett.use_direct_scf, create_beta_vars),
-            E_scf_prev: 0.0,
-            E_scf_curr: 0.0,
-            E_tot_prev: 0.0,
-            E_tot_curr: 0.0,
-        }
-    }
-
-    /// ### Description
-    /// Calculate the 1e integrals for the given basis set and molecule.
-    /// Returns a tuple of the overlap, kinetic and potential energy matrices.
-    ///
-    /// ### Note
-    /// This is not the non-redudant version of the integrals, i.e. each function for the computation gets called separately.
-    ///
-    ///
-    /// ### Arguments
-    /// * `basis` - The basis set.
-    /// * `mol` - The molecule.
-    ///
-    pub fn calc_1e_int_matrs(basis: &BasisSet, mol: &Molecule) -> (Array2<f64>, Array2<f64>) {
-        let mut S_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
-        let mut T_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
-        let mut V_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
-
-        for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
-            for sh_idx2 in 0..=sh_idx1 {
-                let shell2 = basis.shell(sh_idx2);
-                for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
-                    let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
-                    for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
-                        let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
-
-                        // Overlap
-                        S_matr[(mu, nu)] = if mu == nu {
-                            1.0
-                        } else {
-                            calc_overlap_int_cgto(cgto1, cgto2)
-                        };
-                        S_matr[(nu, mu)] = S_matr[(mu, nu)];
-
-                        // Kinetic
-                        T_matr[(mu, nu)] = calc_kinetic_int_cgto(cgto1, cgto2);
-                        T_matr[(nu, mu)] = T_matr[(mu, nu)];
-
-                        // Potential energy
-                        V_matr[(mu, nu)] = calc_pot_int_cgto(cgto1, cgto2, mol);
-                        V_matr[(nu, mu)] = V_matr[(mu, nu)];
-                    }
-                }
-            }
-        }
-
-        // Return ovelap and core hamiltonian (T + V)
-        (S_matr, T_matr + V_matr)
-    }
-
-    pub fn calc_2e_int_matr(basis: &BasisSet) -> EriArr1 {
-        let mut eri = EriArr1::new(basis.no_bf());
-
-        let no_shells = basis.no_shells();
-
-        for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
-            for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
-                let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
-
-                for sh_idx2 in 0..=sh_idx1 {
-                    let shell2 = basis.shell(sh_idx2);
-                    for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
-                        let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
-
-                        if mu >= nu {
-                            let munu = calc_cmp_idx(mu, nu);
-
-                            for sh_idx3 in 0..no_shells {
-                                let shell3 = basis.shell(sh_idx3);
-                                for (cgto_idx3, cgto3) in shell3.cgto_iter().enumerate() {
-                                    let lambda = basis.sh_len_offset(sh_idx3) + cgto_idx3;
-
-                                    for sh_idx4 in 0..=sh_idx3 {
-                                        let shell4 = basis.shell(sh_idx4);
-                                        for (cgto_idx4, cgto4) in shell4.cgto_iter().enumerate() {
-                                            let sigma = basis.sh_len_offset(sh_idx4) + cgto_idx4;
-
-                                            if lambda >= sigma {
-                                                let lambsig = calc_cmp_idx(lambda, sigma);
-                                                if munu >= lambsig {
-                                                    let cmp_idx = calc_cmp_idx(munu, lambsig);
-                                                    eri[cmp_idx] = calc_ERI_int_cgto(
-                                                        cgto1, cgto2, cgto3, cgto4,
-                                                    );
-                                                    // println!("{}: {}", cmp_idx, eri[cmp_idx]);
-                                                } else {
-                                                    continue;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            continue;
-                        }
-                    }
-                }
-            }
-        }
-
-        eri
-    }
-
-    fn calc_1e_int_matrs_inp(&mut self, basis: &BasisSet, mol: &Molecule) {
-        println!("Calculating 1e integrals ...");
-
-        for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
-            for sh_idx2 in 0..=sh_idx1 {
-                let shell2 = basis.shell(sh_idx2);
-                for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
-                    let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
-                    for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
-                        let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
-
-                        // Overlap
-                        self.hf_matrs.S_matr[(mu, nu)] = if mu == nu {
-                            1.0
-                        } else {
-                            calc_overlap_int_cgto(cgto1, cgto2)
-                        };
-                        self.hf_matrs.S_matr[(nu, mu)] = self.hf_matrs.S_matr[(mu, nu)];
-
-                        // Kinetic
-                        self.hf_matrs.T_matr[(mu, nu)] = calc_kinetic_int_cgto(cgto1, cgto2);
-                        self.hf_matrs.T_matr[(nu, mu)] = self.hf_matrs.T_matr[(mu, nu)];
-
-                        // Potential energy
-                        self.hf_matrs.V_ne_matr[(mu, nu)] = calc_pot_int_cgto(cgto1, cgto2, mol);
-                        self.hf_matrs.V_ne_matr[(nu, mu)] = self.hf_matrs.V_ne_matr[(mu, nu)];
-                    }
-                }
-            }
-        }
-        println!("S_matr: \n{:>12.8}", &self.hf_matrs.S_matr);
-        println!("T_matr: \n{:>12.8}", &self.hf_matrs.T_matr);
-        println!("V_matr: \n{:>12.8}", &self.hf_matrs.V_ne_matr);
-
-        Zip::from(self.hf_matrs.T_matr.view())
-            .and(self.hf_matrs.V_ne_matr.view())
-            .par_map_assign_into(&mut self.hf_matrs.H_core_matr, |&t, &v| t + v);
-        println!("FINSIHED calculating 1e integrals ...");
-
-        println!("Starting orthogonalization matrix calculation ...");
-        self.hf_matrs.S_matr_inv_sqrt = Self::inv_ssqrt(&self.hf_matrs.S_matr, UPLO::Upper);
-    }
-    
-    fn calc_2e_int_matr_inp(eri_arr: &mut EriArr1, basis: &BasisSet) {
-        let no_shells = basis.no_shells();
-
-        for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
-            for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
-                let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
-
-                for sh_idx2 in 0..=sh_idx1 {
-                    let shell2 = basis.shell(sh_idx2);
-                    for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
-                        let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
-
-                        if mu >= nu {
-                            let munu = calc_cmp_idx(mu, nu);
-
-                            for sh_idx3 in 0..no_shells {
-                                let shell3 = basis.shell(sh_idx3);
-                                for (cgto_idx3, cgto3) in shell3.cgto_iter().enumerate() {
-                                    let lambda = basis.sh_len_offset(sh_idx3) + cgto_idx3;
-
-                                    for sh_idx4 in 0..=sh_idx3 {
-                                        let shell4 = basis.shell(sh_idx4);
-                                        for (cgto_idx4, cgto4) in shell4.cgto_iter().enumerate() {
-                                            let sigma = basis.sh_len_offset(sh_idx4) + cgto_idx4;
-
-                                            if lambda >= sigma {
-                                                let lambsig = calc_cmp_idx(lambda, sigma);
-                                                if munu >= lambsig {
-                                                    let cmp_idx = calc_cmp_idx(munu, lambsig);
-                                                    eri_arr[cmp_idx] = calc_ERI_int_cgto(
-                                                        cgto1, cgto2, cgto3, cgto4,
-                                                    );
-                                                    // println!("{}: {}", cmp_idx, eri[cmp_idx]);
-                                                } else {
-                                                    continue;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            continue;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn dir_indir_scf_2e_matr(&mut self, basis: &BasisSet, calc_sett: &CalcSettings) {
-        match calc_sett.use_direct_scf {
-            true => {
-                println!("Calculating Schwarz int estimates ...");
-                calc_schwarz_est_int_inp(self.hf_matrs.schwarz_est.as_mut().unwrap(), basis);
-                println!("FINISHED Schwarz int estimates ...");
-            }
-            false => {
-                println!("Calculating 2e integrals ...");
-                Self::calc_2e_int_matr_inp(self.hf_matrs.eri_opt.as_mut().unwrap(), basis);
-                // println!("i j k l; ijkl: val");
-                // for i in 0..basis.no_bf() {
-                //     for j in 0..basis.no_bf() {
-                //         for k in 0..basis.no_bf() {
-                //             for l in 0..basis.no_bf() {
-                //                 let ijkl = calc_cmp_idx(calc_cmp_idx(i, j), calc_cmp_idx(k, l));
-                //                 println!("{:>3}{:>3}{:>3}{:>3}; {:>4}: {:>12.8}", i,j,k,l,ijkl, self.hf_matrs.eri_opt.as_ref().unwrap()[ijkl]);
-                //             }
-                //         }
-                //     }
-                // }
-                println!("FINSIHED calculating 2e integrals ...");
-            }
-        }
-    }
-
+impl HF for RHF {
     /// This is the main RHF SCF function to be called and run the RHF SCF calculation
     /// ## Options:
     /// - DIIS
     /// - direct vs. indirect SCF
     #[allow(unused)]
-    pub fn run_scf(
+    fn run_scf(
         &mut self,
         calc_sett: &CalcSettings,
         exec_times: &mut ExecTimes,
@@ -470,6 +233,247 @@ impl RHF {
         }
         scf
     }
+}
+
+impl RHF {
+    pub fn new(basis: &BasisSet, calc_sett: &CalcSettings, ref_type: HF_Ref) -> Self {
+        let create_beta_vars = match ref_type {
+            HF_Ref::RHF_ref => false,
+            HF_Ref::UHF_ref | HF_Ref::ROHF_ref => true,
+        };
+
+        Self {
+            hf_matrs: HFMatrices::new(basis.no_bf(), calc_sett.use_direct_scf, create_beta_vars),
+            E_scf_prev: 0.0,
+            E_scf_curr: 0.0,
+            E_tot_prev: 0.0,
+            E_tot_curr: 0.0,
+        }
+    }
+
+    /// ### Description
+    /// Calculate the 1e integrals for the given basis set and molecule.
+    /// Returns a tuple of the overlap, kinetic and potential energy matrices.
+    ///
+    /// ### Note
+    /// This is not the non-redudant version of the integrals, i.e. each function for the computation gets called separately.
+    ///
+    ///
+    /// ### Arguments
+    /// * `basis` - The basis set.
+    /// * `mol` - The molecule.
+    ///
+    pub fn calc_1e_int_matrs(basis: &BasisSet, mol: &Molecule) -> (Array2<f64>, Array2<f64>) {
+        let mut S_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
+        let mut T_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
+        let mut V_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
+
+        for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
+            for sh_idx2 in 0..=sh_idx1 {
+                let shell2 = basis.shell(sh_idx2);
+                for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
+                    let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
+                    for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
+                        let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
+
+                        // Overlap
+                        S_matr[(mu, nu)] = if mu == nu {
+                            1.0
+                        } else {
+                            calc_overlap_int_cgto(cgto1, cgto2)
+                        };
+                        S_matr[(nu, mu)] = S_matr[(mu, nu)];
+
+                        // Kinetic
+                        T_matr[(mu, nu)] = calc_kinetic_int_cgto(cgto1, cgto2);
+                        T_matr[(nu, mu)] = T_matr[(mu, nu)];
+
+                        // Potential energy
+                        V_matr[(mu, nu)] = calc_pot_int_cgto(cgto1, cgto2, mol);
+                        V_matr[(nu, mu)] = V_matr[(mu, nu)];
+                    }
+                }
+            }
+        }
+
+        // Return ovelap and core hamiltonian (T + V)
+        (S_matr, T_matr + V_matr)
+    }
+
+    pub fn calc_2e_int_matr(basis: &BasisSet) -> EriArr1 {
+        let mut eri = EriArr1::new(basis.no_bf());
+
+        let no_shells = basis.no_shells();
+
+        for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
+            for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
+                let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
+
+                for sh_idx2 in 0..=sh_idx1 {
+                    let shell2 = basis.shell(sh_idx2);
+                    for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
+                        let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
+
+                        if mu >= nu {
+                            let munu = calc_cmp_idx(mu, nu);
+
+                            for sh_idx3 in 0..no_shells {
+                                let shell3 = basis.shell(sh_idx3);
+                                for (cgto_idx3, cgto3) in shell3.cgto_iter().enumerate() {
+                                    let lambda = basis.sh_len_offset(sh_idx3) + cgto_idx3;
+
+                                    for sh_idx4 in 0..=sh_idx3 {
+                                        let shell4 = basis.shell(sh_idx4);
+                                        for (cgto_idx4, cgto4) in shell4.cgto_iter().enumerate() {
+                                            let sigma = basis.sh_len_offset(sh_idx4) + cgto_idx4;
+
+                                            if lambda >= sigma {
+                                                let lambsig = calc_cmp_idx(lambda, sigma);
+                                                if munu >= lambsig {
+                                                    let cmp_idx = calc_cmp_idx(munu, lambsig);
+                                                    eri[cmp_idx] = calc_ERI_int_cgto(
+                                                        cgto1, cgto2, cgto3, cgto4,
+                                                    );
+                                                    // println!("{}: {}", cmp_idx, eri[cmp_idx]);
+                                                } else {
+                                                    continue;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
+        eri
+    }
+
+
+    fn calc_1e_int_matrs_inp(&mut self, basis: &BasisSet, mol: &Molecule) {
+        println!("Calculating 1e integrals ...");
+
+        for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
+            for sh_idx2 in 0..=sh_idx1 {
+                let shell2 = basis.shell(sh_idx2);
+                for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
+                    let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
+                    for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
+                        let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
+
+                        // Overlap
+                        self.hf_matrs.S_matr[(mu, nu)] = if mu == nu {
+                            1.0
+                        } else {
+                            calc_overlap_int_cgto(cgto1, cgto2)
+                        };
+                        self.hf_matrs.S_matr[(nu, mu)] = self.hf_matrs.S_matr[(mu, nu)];
+
+                        // Kinetic
+                        self.hf_matrs.T_matr[(mu, nu)] = calc_kinetic_int_cgto(cgto1, cgto2);
+                        self.hf_matrs.T_matr[(nu, mu)] = self.hf_matrs.T_matr[(mu, nu)];
+
+                        // Potential energy
+                        self.hf_matrs.V_ne_matr[(mu, nu)] = calc_pot_int_cgto(cgto1, cgto2, mol);
+                        self.hf_matrs.V_ne_matr[(nu, mu)] = self.hf_matrs.V_ne_matr[(mu, nu)];
+                    }
+                }
+            }
+        }
+        println!("S_matr: \n{:>12.8}", &self.hf_matrs.S_matr);
+        println!("T_matr: \n{:>12.8}", &self.hf_matrs.T_matr);
+        println!("V_matr: \n{:>12.8}", &self.hf_matrs.V_ne_matr);
+
+        Zip::from(self.hf_matrs.T_matr.view())
+            .and(self.hf_matrs.V_ne_matr.view())
+            .par_map_assign_into(&mut self.hf_matrs.H_core_matr, |&t, &v| t + v);
+        println!("FINSIHED calculating 1e integrals ...");
+
+        println!("Starting orthogonalization matrix calculation ...");
+        self.hf_matrs.S_matr_inv_sqrt = Self::inv_ssqrt(&self.hf_matrs.S_matr, UPLO::Upper);
+    }
+    
+    fn calc_2e_int_matr_inp(eri_arr: &mut EriArr1, basis: &BasisSet) {
+        let no_shells = basis.no_shells();
+
+        for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
+            for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
+                let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
+
+                for sh_idx2 in 0..=sh_idx1 {
+                    let shell2 = basis.shell(sh_idx2);
+                    for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
+                        let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
+
+                        if mu >= nu {
+                            let munu = calc_cmp_idx(mu, nu);
+
+                            for sh_idx3 in 0..no_shells {
+                                let shell3 = basis.shell(sh_idx3);
+                                for (cgto_idx3, cgto3) in shell3.cgto_iter().enumerate() {
+                                    let lambda = basis.sh_len_offset(sh_idx3) + cgto_idx3;
+
+                                    for sh_idx4 in 0..=sh_idx3 {
+                                        let shell4 = basis.shell(sh_idx4);
+                                        for (cgto_idx4, cgto4) in shell4.cgto_iter().enumerate() {
+                                            let sigma = basis.sh_len_offset(sh_idx4) + cgto_idx4;
+
+                                            if lambda >= sigma {
+                                                let lambsig = calc_cmp_idx(lambda, sigma);
+                                                if munu >= lambsig {
+                                                    let cmp_idx = calc_cmp_idx(munu, lambsig);
+                                                    eri_arr[cmp_idx] = calc_ERI_int_cgto(
+                                                        cgto1, cgto2, cgto3, cgto4,
+                                                    );
+                                                    // println!("{}: {}", cmp_idx, eri[cmp_idx]);
+                                                } else {
+                                                    continue;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn dir_indir_scf_2e_matr(&mut self, basis: &BasisSet, calc_sett: &CalcSettings) {
+        match calc_sett.use_direct_scf {
+            true => {
+                println!("Calculating Schwarz int estimates ...");
+                calc_schwarz_est_int_inp(self.hf_matrs.schwarz_est.as_mut().unwrap(), basis);
+                println!("FINISHED Schwarz int estimates ...");
+            }
+            false => {
+                println!("Calculating 2e integrals ...");
+                Self::calc_2e_int_matr_inp(self.hf_matrs.eri_opt.as_mut().unwrap(), basis);
+                // println!("i j k l; ijkl: val");
+                // for i in 0..basis.no_bf() {
+                //     for j in 0..basis.no_bf() {
+                //         for k in 0..basis.no_bf() {
+                //             for l in 0..basis.no_bf() {
+                //                 let ijkl = calc_cmp_idx(calc_cmp_idx(i, j), calc_cmp_idx(k, l));
+                //                 println!("{:>3}{:>3}{:>3}{:>3}; {:>4}: {:>12.8}", i,j,k,l,ijkl, self.hf_matrs.eri_opt.as_ref().unwrap()[ijkl]);
+                //             }
+                //         }
+                //     }
+                // }
+                println!("FINSIHED calculating 2e integrals ...");
+            }
+        }
+    }
+
 
     fn calc_P_matr_rhf(P_matr: &mut Array2<f64>, C_matr: &Array2<f64>, no_occ: usize) {
         let C_occ = C_matr.slice(s![.., ..no_occ]);

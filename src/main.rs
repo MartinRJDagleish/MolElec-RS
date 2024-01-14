@@ -14,6 +14,7 @@ mod print_utils;
 use crate::{calc_type::HF_Ref, print_utils::print_header_logo};
 use basisset::BasisSet;
 use calc_type::{rhf::RHF, uhf::uhf_scf_normal, CalcSettings, DiisSettings};
+use calc_type::HF;
 use molecule::Molecule;
 
 fn main() {

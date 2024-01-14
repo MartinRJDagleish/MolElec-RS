@@ -3,7 +3,7 @@ use crate::{
     basisset::BasisSet,
     calc_type::{
         rhf::RHF,
-        DIIS,
+        DIIS, HF,
     },
     mol_int_and_deriv::te_int::calc_schwarz_est_int,
     molecule::Molecule,

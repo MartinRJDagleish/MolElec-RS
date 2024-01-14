@@ -1,5 +1,9 @@
 #![allow(non_snake_case)]
+use crate::basisset::BasisSet;
 use crate::calc_type::rhf::calc_cmp_idx;
+use crate::mol_int_and_deriv::oe_int::{calc_overlap_int_cgto, calc_kinetic_int_cgto, calc_pot_int_cgto};
+use crate::mol_int_and_deriv::te_int::calc_ERI_int_cgto;
+use crate::molecule::Molecule;
 use ndarray::parallel::prelude::*;
 use ndarray::{Array1, Array2, Zip};
 use ndarray_linalg::SolveH;
@@ -17,11 +21,11 @@ pub(crate) enum HF_Ref {
 }
 
 pub(crate) trait HF {
-    fn new(
-        basis: &crate::basisset::BasisSet,
-        calc_sett: &CalcSettings,
-        ref_type: HF_Ref,
-    ) -> Self;
+    // fn new(
+    //     basis: &BasisSet,
+    //     calc_sett: &CalcSettings,
+    //     ref_type: HF_Ref,
+    // ) -> Self;
 
     fn run_scf(
         &mut self,
@@ -30,6 +34,7 @@ pub(crate) trait HF {
         basis: &crate::basisset::BasisSet,
         mol: &crate::molecule::Molecule,
     ) -> SCF;
+
 }
 
 #[derive(Debug)]
