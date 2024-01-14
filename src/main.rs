@@ -13,8 +13,7 @@ mod print_utils;
 
 use crate::{calc_type::HF_Ref, print_utils::print_header_logo};
 use basisset::BasisSet;
-use calc_type::{rhf::RHF, uhf::uhf_scf_normal, CalcSettings, DiisSettings};
-use calc_type::HF;
+use calc_type::{HF, rhf::RHF, uhf::uhf_scf_normal, CalcSettings, DiisSettings};
 use molecule::Molecule;
 
 fn main() {
@@ -61,9 +60,9 @@ fn main() {
     let mut rhf = RHF::new(&basis, &calc_sett, HF_Ref::RHF_ref);
     let _scf = rhf.run_scf(&calc_sett, &mut exec_times, &basis, &mol);
     exec_times.stop("RHF DIIS indir");
-    // exec_times.start("UHF DIIS indir");
-    // let _scf = uhf_scf_normal(&calc_sett, &mut exec_times, &basis, &mol);
-    // exec_times.stop("UHF DIIS indir");
+    exec_times.start("UHF DIIS indir");
+    let _scf = uhf_scf_normal(&calc_sett, &mut exec_times, &basis, &mol);
+    exec_times.stop("UHF DIIS indir");
 
     exec_times.stop("Total");
 

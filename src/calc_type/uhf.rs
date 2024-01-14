@@ -1,11 +1,14 @@
-use super::{CalcSettings, EriArr1, SCF, HFMatrices, HF_Ref};
+use super::{rhf::calc_cmp_idx, CalcSettings, EriArr1, HFMatrices, HF_Ref, SCF};
 use crate::{
     basisset::BasisSet,
     calc_type::{
-        rhf::RHF,
+        rhf::{matr_inv_ssqrt, RHF},
         DIIS, HF,
     },
-    mol_int_and_deriv::te_int::calc_schwarz_est_int,
+    mol_int_and_deriv::{
+        oe_int::{calc_kinetic_int_cgto, calc_overlap_int_cgto, calc_pot_int_cgto},
+        te_int::{calc_schwarz_est_int, calc_schwarz_est_int_inp},
+    },
     molecule::Molecule,
     print_utils::{fmt_f64, print_scf::print_scf_header_and_settings},
 };
@@ -79,6 +82,373 @@ impl UHF {
             E_tot_prev: 0.0,
             E_tot_curr: 0.0,
         }
+    }
+
+    fn calc_1e_int_matrs_inp(&mut self, basis: &BasisSet, mol: &Molecule) {
+        println!("Calculating 1e integrals ...");
+
+        for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
+            for sh_idx2 in 0..=sh_idx1 {
+                let shell2 = basis.shell(sh_idx2);
+                for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
+                    let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
+                    for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
+                        let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
+
+                        // Overlap
+                        self.hf_matrs.S_matr[(mu, nu)] = if mu == nu {
+                            1.0
+                        } else {
+                            calc_overlap_int_cgto(cgto1, cgto2)
+                        };
+                        self.hf_matrs.S_matr[(nu, mu)] = self.hf_matrs.S_matr[(mu, nu)];
+
+                        // Kinetic
+                        self.hf_matrs.T_matr[(mu, nu)] = calc_kinetic_int_cgto(cgto1, cgto2);
+                        self.hf_matrs.T_matr[(nu, mu)] = self.hf_matrs.T_matr[(mu, nu)];
+
+                        // Potential energy
+                        self.hf_matrs.V_ne_matr[(mu, nu)] = calc_pot_int_cgto(cgto1, cgto2, mol);
+                        self.hf_matrs.V_ne_matr[(nu, mu)] = self.hf_matrs.V_ne_matr[(mu, nu)];
+                    }
+                }
+            }
+        }
+        println!("S_matr: \n{:>12.8}", &self.hf_matrs.S_matr);
+        println!("T_matr: \n{:>12.8}", &self.hf_matrs.T_matr);
+        println!("V_matr: \n{:>12.8}", &self.hf_matrs.V_ne_matr);
+
+        Zip::from(self.hf_matrs.T_matr.view())
+            .and(self.hf_matrs.V_ne_matr.view())
+            .par_map_assign_into(&mut self.hf_matrs.H_core_matr, |&t, &v| t + v);
+        println!("FINSIHED calculating 1e integrals ...");
+
+        println!("Starting orthogonalization matrix calculation ...");
+        self.hf_matrs.S_matr_inv_sqrt = matr_inv_ssqrt(&self.hf_matrs.S_matr, UPLO::Upper);
+        println!("FINISHED orthogonalization matrix calculation ...");
+    }
+
+    fn calc_2e_int_matr_inp(eri_arr: &mut EriArr1, basis: &BasisSet) {
+        let no_shells = basis.no_shells();
+
+        for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
+            for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
+                let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
+
+                for sh_idx2 in 0..=sh_idx1 {
+                    let shell2 = basis.shell(sh_idx2);
+                    for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
+                        let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
+
+                        if mu >= nu {
+                            let munu = calc_cmp_idx(mu, nu);
+
+                            for sh_idx3 in 0..no_shells {
+                                let shell3 = basis.shell(sh_idx3);
+                                for (cgto_idx3, cgto3) in shell3.cgto_iter().enumerate() {
+                                    let lambda = basis.sh_len_offset(sh_idx3) + cgto_idx3;
+
+                                    for sh_idx4 in 0..=sh_idx3 {
+                                        let shell4 = basis.shell(sh_idx4);
+                                        for (cgto_idx4, cgto4) in shell4.cgto_iter().enumerate() {
+                                            let sigma = basis.sh_len_offset(sh_idx4) + cgto_idx4;
+
+                                            if lambda >= sigma {
+                                                let lambsig = calc_cmp_idx(lambda, sigma);
+                                                if munu >= lambsig {
+                                                    let cmp_idx = calc_cmp_idx(munu, lambsig);
+                                                    eri_arr[cmp_idx] = calc_ERI_int_cgto(
+                                                        cgto1, cgto2, cgto3, cgto4,
+                                                    );
+                                                    // println!("{}: {}", cmp_idx, eri[cmp_idx]);
+                                                } else {
+                                                    continue;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn dir_indir_scf_2e_matr(&mut self, basis: &BasisSet, calc_sett: &CalcSettings) {
+        match calc_sett.use_direct_scf {
+            true => {
+                println!("Calculating Schwarz int estimates ...");
+                calc_schwarz_est_int_inp(self.hf_matrs.schwarz_est.as_mut().unwrap(), basis);
+                println!("FINISHED Schwarz int estimates ...");
+            }
+            false => {
+                println!("Calculating 2e integrals ...");
+                Self::calc_2e_int_matr_inp(self.hf_matrs.eri_opt.as_mut().unwrap(), basis);
+                // println!("i j k l; ijkl: val");
+                // for i in 0..basis.no_bf() {
+                //     for j in 0..basis.no_bf() {
+                //         for k in 0..basis.no_bf() {
+                //             for l in 0..basis.no_bf() {
+                //                 let ijkl = calc_cmp_idx(calc_cmp_idx(i, j), calc_cmp_idx(k, l));
+                //                 println!("{:>3}{:>3}{:>3}{:>3}; {:>4}: {:>12.8}", i,j,k,l,ijkl, self.hf_matrs.eri_opt.as_ref().unwrap()[ijkl]);
+                //             }
+                //         }
+                //     }
+                // }
+                println!("FINSIHED calculating 2e integrals ...");
+            }
+        }
+    }
+
+    pub(crate) fn uhf_scf_normal(
+        &mut self,
+        calc_sett: &CalcSettings,
+        exec_times: &mut crate::print_utils::ExecTimes,
+        basis: &BasisSet,
+        mol: &Molecule,
+    ) -> SCF {
+        print_scf_header_and_settings(calc_sett, crate::calc_type::HF_Ref::UHF_ref);
+
+        let mut is_scf_conv = false;
+        let mut scf = SCF::default();
+
+        // TODO: [ ] account for Multiplicity != 1 -> differnt input handling
+        let no_elec_half = mol.no_elec() / 2;
+        let (no_alpha, no_beta) = if mol.no_elec() % 2 == 0 {
+            (no_elec_half, no_elec_half)
+        } else {
+            (no_elec_half + 1, no_elec_half)
+        };
+
+        let mut diis_alph = if calc_sett.use_diis {
+            Some(DIIS::new(
+                &calc_sett.diis_sett,
+                [basis.no_bf(), basis.no_bf()],
+            ))
+        } else {
+            None
+        };
+        let mut diis_beta = diis_alph.clone();
+
+        let V_nuc: f64 = if mol.no_atoms() > 100 {
+            mol.calc_core_potential_par()
+        } else {
+            mol.calc_core_potential_ser()
+        };
+
+        // Calculate 1e ints
+        exec_times.start("1e ints");
+        self.calc_1e_int_matrs_inp(basis, mol);
+        exec_times.stop("1e ints");
+
+        // Calculate 2e ints / Schwarz estimates
+        exec_times.start("2e ints / Schwarz esti.");
+        self.dir_indir_scf_2e_matr(basis, calc_sett);
+        exec_times.stop("2e ints / Schwarz esti.");
+
+        // Init matrices for SCF loop
+        // let (mut orb_E_alph, mut C_matr_MO_alph) = init_diag_F_matr(&H_core, &S_matr_inv_sqrt);
+        // let mut C_matr_AO_alph = S_matr_inv_sqrt.dot(&C_matr_MO_alph);
+        //
+        // let mut C_matr_MO_beta = C_matr_MO_alph.clone();
+        // let mut C_matr_AO_beta = C_matr_AO_alph.clone();
+        // let mut orb_E_beta = orb_E_alph.clone();
+        //
+        // let mut E_scf_prev = 0.0;
+        //
+        // let mut P_matr_alph = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
+        // build_P_matr_uhf(&mut P_matr_alph, &C_matr_AO_alph, no_alpha);
+        // let mut P_matr_beta = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
+        // build_P_matr_uhf(&mut P_matr_beta, &C_matr_AO_beta, no_beta);
+        // let mut P_matr_old_alph = P_matr_alph.clone();
+        // let mut P_matr_old_beta = P_matr_beta.clone();
+        //
+        // // Initial guess -> H_core
+        // let mut F_matr_alph = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
+        // let mut F_matr_beta = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
+        //
+        // let mut F_matr_pr_alph;
+        // let mut F_matr_pr_beta;
+
+        println!(
+            "{:>3} {:^20} {:^20} {:^20} {:^20}",
+            "Iter", "E_scf", "E_tot", "ΔE", "RMS(|FPS - SPF|)"
+        );
+
+        let mut diis_str = "";
+        for scf_iter in 0..=calc_sett.max_scf_iter {
+            if scf_iter == 0 {
+                self.hf_matrs.F_matr_alpha = self.hf_matrs.H_core_matr.clone();
+                self.hf_matrs.F_matr_beta = Some(self.hf_matrs.H_core_matr.clone());
+
+                self.hf_matrs.F_matr_pr_alpha = self
+                    .hf_matrs
+                    .S_matr_inv_sqrt
+                    .dot(&self.hf_matrs.F_matr_alpha)
+                    .dot(&self.hf_matrs.S_matr_inv_sqrt);
+                self.hf_matrs.F_matr_pr_beta = Some(self
+                    .hf_matrs
+                    .S_matr_inv_sqrt
+                    .dot(self.hf_matrs.F_matr_beta.as_ref().unwrap())
+                    .dot(&self.hf_matrs.S_matr_inv_sqrt));
+
+                (self.hf_matrs.orb_ener_alpha, self.hf_matrs.C_matr_MO_alpha) =
+                    self.hf_matrs.F_matr_pr_alpha.eigh(UPLO::Upper).unwrap();
+                self.hf_matrs.C_matr_AO_alpha = self
+                    .hf_matrs
+                    .S_matr_inv_sqrt
+                    .dot(&self.hf_matrs.C_matr_MO_alpha);
+
+                (self.hf_matrs.orb_ener_beta, self.hf_matrs.C_matr_MO_beta) =
+                    self.hf_matrs.F_matr_pr_beta.eigh(UPLO::Upper).unwrap();
+                self.hf_matrs.C_matr_AO_beta = self
+                    .hf_matrs
+                    .S_matr_inv_sqrt
+                    .dot(&self.hf_matrs.C_matr_MO_beta);
+
+                Self::calc_P_matr_uhf(
+                    &mut self.hf_matrs.P_matr_alpha,
+                    &self.hf_matrs.C_matr_AO_alpha,
+                    no_alpha,
+                );
+                Self::calc_P_matr_uhf(
+                    &mut self.hf_matrs.P_matr_beta,
+                    &self.hf_matrs.C_matr_AO_beta,
+                    no_beta,
+                );
+                if calc_sett.use_direct_scf {
+                    self.hf_matrs.delta_P_matr_alpha = Some(self.hf_matrs.P_matr_alpha.clone());
+                    self.hf_matrs.delta_P_matr_beta = Some(self.hf_matrs.P_matr_beta.clone());
+                }
+            } else {
+                /// Direct or Indirect SCF
+                match eri_opt {
+                    // Indirect SCF
+                    Some(ref eri) => {
+                        calc_new_F_matr_ind_scf_uhf(
+                            &mut F_matr_alph,
+                            &H_core,
+                            &P_matr_alph,
+                            &P_matr_beta,
+                            eri,
+                            true,
+                        );
+                        calc_new_F_matr_ind_scf_uhf(
+                            &mut F_matr_beta,
+                            &H_core,
+                            &P_matr_alph,
+                            &P_matr_beta,
+                            eri,
+                            false,
+                        );
+                    }
+                    // Direct SCF
+                    None => {
+                        todo!("Direct SCF for UHF not yet implemented!")
+                    }
+                }
+                let E_scf_curr = calc_E_scf_uhf(
+                    &P_matr_alph,
+                    &P_matr_beta,
+                    &H_core,
+                    &F_matr_alph,
+                    &F_matr_beta,
+                );
+                scf.E_tot_conv = E_scf_curr + V_nuc;
+                let fps_comm_alph = DIIS::calc_FPS_comm(&F_matr_alph, &P_matr_alph, &S_matr);
+                let fps_comm_beta = DIIS::calc_FPS_comm(&F_matr_beta, &P_matr_beta, &S_matr);
+
+                F_matr_pr_alph = S_matr_inv_sqrt.dot(&F_matr_alph).dot(&S_matr_inv_sqrt);
+                F_matr_pr_beta = S_matr_inv_sqrt.dot(&F_matr_beta).dot(&S_matr_inv_sqrt);
+
+                if calc_sett.use_diis {
+                    let replace_idx = (scf_iter - 1) % calc_sett.diis_sett.diis_max; // always start with 0
+                    let err_matr_alph = S_matr_inv_sqrt.dot(&fps_comm_alph).dot(&S_matr_inv_sqrt);
+                    let err_matr_beta = S_matr_inv_sqrt.dot(&fps_comm_beta).dot(&S_matr_inv_sqrt);
+                    diis_alph.as_mut().unwrap().push_to_ring_buf(
+                        &F_matr_pr_alph,
+                        &err_matr_alph,
+                        replace_idx,
+                    );
+                    diis_beta.as_mut().unwrap().push_to_ring_buf(
+                        &F_matr_pr_beta,
+                        &err_matr_beta,
+                        replace_idx,
+                    );
+
+                    if scf_iter >= calc_sett.diis_sett.diis_min {
+                        let err_set_len = std::cmp::min(calc_sett.diis_sett.diis_max, scf_iter);
+                        F_matr_pr_alph = diis_alph.as_ref().unwrap().run_DIIS(err_set_len);
+                        F_matr_pr_beta = diis_beta.as_ref().unwrap().run_DIIS(err_set_len);
+                        diis_str = "DIIS";
+                    }
+                }
+
+                (orb_E_alph, C_matr_MO_alph) = F_matr_pr_alph.eigh(UPLO::Upper).unwrap();
+                C_matr_AO_alph = S_matr_inv_sqrt.dot(&C_matr_MO_alph);
+
+                (orb_E_beta, C_matr_MO_beta) = F_matr_pr_beta.eigh(UPLO::Upper).unwrap();
+                C_matr_AO_beta = S_matr_inv_sqrt.dot(&C_matr_MO_beta);
+
+                let delta_E = E_scf_curr - E_scf_prev;
+                let rms_comm_val = calc_rms_comm_val_uhf(&fps_comm_alph, &fps_comm_beta);
+
+                println!(
+                    "{:>3} {:>20.12} {:>20.12} {} {} {:>10} ",
+                    scf_iter,
+                    E_scf_curr,
+                    scf.E_tot_conv,
+                    fmt_f64(delta_E, 20, 8, 2),
+                    fmt_f64(rms_comm_val, 20, 8, 2),
+                    diis_str
+                );
+                diis_str = "";
+
+                if scf_conv_check(calc_sett, delta_E, rms_comm_val) {
+                    scf.tot_scf_iter = scf_iter;
+                    scf.E_scf_conv = E_scf_curr;
+                    scf.C_matr_conv_alph = C_matr_AO_alph;
+                    scf.C_matr_conv_beta = Some(C_matr_AO_beta);
+                    scf.P_matr_conv_alph = P_matr_alph;
+                    scf.P_matr_conv_beta = Some(P_matr_beta);
+                    scf.orb_E_conv_alph = orb_E_alph;
+                    scf.orb_E_conv_beta = Some(orb_E_beta);
+                    println!("\nSCF CONVERGED!\n");
+                    is_scf_conv = true;
+                    break;
+                } else if scf_iter == calc_sett.max_scf_iter {
+                    println!("\nSCF DID NOT CONVERGE!\n");
+                    break;
+                }
+
+                E_scf_prev = E_scf_curr;
+                P_matr_old_alph = P_matr_alph.clone();
+                P_matr_old_beta = P_matr_beta.clone();
+                build_P_matr_uhf(&mut P_matr_alph, &C_matr_AO_alph, no_alpha);
+                build_P_matr_uhf(&mut P_matr_beta, &C_matr_AO_beta, no_beta);
+                if calc_sett.use_direct_scf {
+                    todo!()
+                    // delta_P_matr = Some((&P_matr - &P_matr_old).to_owned());
+                }
+            }
+        }
+
+        if is_scf_conv {
+            println!("{:*<55}", "");
+            println!("* {:^51} *", "FINAL RESULTS");
+            println!("{:*<55}", "");
+            println!("  {:^50}", "UHF SCF (in a.u.)");
+            println!("  {:=^50}  ", "");
+            println!("  {:<25}{:>25}", "Total SCF iterations:", scf.tot_scf_iter);
+            println!("  {:<25}{:>25.18}", "Final SCF energy:", scf.E_scf_conv);
+            println!("  {:<25}{:>25.18}", "Final tot. energy:", scf.E_tot_conv);
+            println!("{:*<55}", "");
+        }
+        scf
     }
 
     // pub fn run_scf(
@@ -285,214 +655,7 @@ impl UHF {
     // }
 }
 
-#[allow(unused)]
-pub(crate) fn uhf_scf_normal(
-    calc_sett: &CalcSettings,
-    exec_times: &mut crate::print_utils::ExecTimes,
-    basis: &BasisSet,
-    mol: &Molecule,
-) -> SCF {
-    print_scf_header_and_settings(calc_sett, crate::calc_type::HF_Ref::UHF_ref);
-    let mut is_scf_conv = false;
-    let mut scf = SCF::default();
-
-    // TODO: [ ] account for Multiplicity != 1 -> differnt input handling
-    let no_elec_half = mol.no_elec() / 2;
-    let (no_alpha, no_beta) = if mol.no_elec() % 2 == 0 {
-        (no_elec_half, no_elec_half)
-    } else {
-        (no_elec_half + 1, no_elec_half)
-    };
-
-    let mut diis_alph = if calc_sett.use_diis {
-        Some(DIIS::new(&calc_sett.diis_sett, [basis.no_bf(), basis.no_bf()]))
-    } else {
-        None
-    };
-    let mut diis_beta = diis_alph.clone();
-
-    let V_nuc: f64 = if mol.no_atoms() > 100 {
-        mol.calc_core_potential_par()
-    } else {
-        mol.calc_core_potential_ser()
-    };
-
-    println!("Calculating 1e integrals ...");
-    let (S_matr, H_core) = RHF::calc_1e_int_matrs(basis, mol);
-    println!("FINSIHED calculating 1e integrals ...");
-
-    let eri_opt;
-    let schwarz_est_matr;
-    if calc_sett.use_direct_scf {
-        eri_opt = None;
-
-        println!("Calculating Schwarz int estimates ...");
-        schwarz_est_matr = Some(calc_schwarz_est_int(basis));
-        println!("FINISHED Schwarz int estimates ...\n");
-    } else {
-        schwarz_est_matr = None;
-
-        println!("Calculating 2e integrals ...");
-        eri_opt = Some(RHF::calc_2e_int_matr(basis));
-        println!("FINSIHED calculating 2e integrals ...\n");
-    }
-
-    let S_matr_inv_sqrt = RHF::inv_ssqrt(&S_matr, UPLO::Upper);
-
-    // Init matrices for SCF loop
-    let (mut orb_E_alph, mut C_matr_MO_alph) = init_diag_F_matr(&H_core, &S_matr_inv_sqrt);
-    let mut C_matr_AO_alph = S_matr_inv_sqrt.dot(&C_matr_MO_alph);
-
-    let mut C_matr_MO_beta = C_matr_MO_alph.clone();
-    let mut C_matr_AO_beta = C_matr_AO_alph.clone();
-    let mut orb_E_beta = orb_E_alph.clone();
-
-    let mut E_scf_prev = 0.0;
-
-    let mut P_matr_alph = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
-    build_P_matr_uhf(&mut P_matr_alph, &C_matr_AO_alph, no_alpha);
-    let mut P_matr_beta = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
-    build_P_matr_uhf(&mut P_matr_beta, &C_matr_AO_beta, no_beta);
-    let mut P_matr_old_alph = P_matr_alph.clone();
-    let mut P_matr_old_beta = P_matr_beta.clone();
-
-
-    // Initial guess -> H_core
-    let mut F_matr_alph = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
-    let mut F_matr_beta = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
-
-    let mut F_matr_pr_alph;
-    let mut F_matr_pr_beta;
-
-    println!(
-        "{:>3} {:^20} {:^20} {:^20} {:^20}",
-        "Iter", "E_scf", "E_tot", "ΔE", "RMS(|FPS - SPF|)"
-    );
-
-    let mut diis_str = "";
-    for scf_iter in 1..=calc_sett.max_scf_iter {
-        /// Direct or Indirect SCF
-        match eri_opt {
-            // Indirect SCF
-            Some(ref eri) => {
-                calc_new_F_matr_ind_scf_uhf(
-                    &mut F_matr_alph,
-                    &H_core,
-                    &P_matr_alph,
-                    &P_matr_beta,
-                    eri,
-                    true,
-                );
-                calc_new_F_matr_ind_scf_uhf(
-                    &mut F_matr_beta,
-                    &H_core,
-                    &P_matr_alph,
-                    &P_matr_beta,
-                    eri,
-                    false,
-                );
-            }
-            // Direct SCF
-            None => {
-                todo!("Direct SCF for UHF not yet implemented!")
-            }
-        }
-        let E_scf_curr = calc_E_scf_uhf(
-            &P_matr_alph,
-            &P_matr_beta,
-            &H_core,
-            &F_matr_alph,
-            &F_matr_beta,
-        );
-        scf.E_tot_conv = E_scf_curr + V_nuc;
-        let fps_comm_alph = DIIS::calc_FPS_comm(&F_matr_alph, &P_matr_alph, &S_matr);
-        let fps_comm_beta = DIIS::calc_FPS_comm(&F_matr_beta, &P_matr_beta, &S_matr);
-
-        F_matr_pr_alph = S_matr_inv_sqrt.dot(&F_matr_alph).dot(&S_matr_inv_sqrt);
-        F_matr_pr_beta = S_matr_inv_sqrt.dot(&F_matr_beta).dot(&S_matr_inv_sqrt);
-
-        if calc_sett.use_diis {
-            let replace_idx = (scf_iter - 1) % calc_sett.diis_sett.diis_max; // always start with 0
-            let err_matr_alph = S_matr_inv_sqrt.dot(&fps_comm_alph).dot(&S_matr_inv_sqrt);
-            let err_matr_beta = S_matr_inv_sqrt.dot(&fps_comm_beta).dot(&S_matr_inv_sqrt);
-            diis_alph
-                .as_mut()
-                .unwrap()
-                .push_to_ring_buf(&F_matr_pr_alph, &err_matr_alph, replace_idx);
-            diis_beta
-                .as_mut()
-                .unwrap()
-                .push_to_ring_buf(&F_matr_pr_beta, &err_matr_beta, replace_idx);
-
-            if scf_iter >= calc_sett.diis_sett.diis_min {
-                let err_set_len = std::cmp::min(calc_sett.diis_sett.diis_max, scf_iter);
-                F_matr_pr_alph = diis_alph.as_ref().unwrap().run_DIIS(err_set_len);
-                F_matr_pr_beta = diis_beta.as_ref().unwrap().run_DIIS(err_set_len);
-                diis_str = "DIIS";
-            }
-        }
-
-        (orb_E_alph, C_matr_MO_alph) = F_matr_pr_alph.eigh(UPLO::Upper).unwrap();
-        C_matr_AO_alph = S_matr_inv_sqrt.dot(&C_matr_MO_alph);
-
-        (orb_E_beta, C_matr_MO_beta) = F_matr_pr_beta.eigh(UPLO::Upper).unwrap();
-        C_matr_AO_beta = S_matr_inv_sqrt.dot(&C_matr_MO_beta);
-
-        let delta_E = E_scf_curr - E_scf_prev;
-        let rms_comm_val = calc_rms_comm_val_uhf(&fps_comm_alph, &fps_comm_beta);
-
-        println!(
-            "{:>3} {:>20.12} {:>20.12} {} {} {:>10} ",
-            scf_iter,
-            E_scf_curr,
-            scf.E_tot_conv,
-            fmt_f64(delta_E, 20, 8, 2),
-            fmt_f64(rms_comm_val, 20, 8, 2),
-            diis_str
-        );
-        diis_str = "";
-
-        if scf_conv_check(calc_sett, delta_E, rms_comm_val) {
-            scf.tot_scf_iter = scf_iter;
-            scf.E_scf_conv = E_scf_curr;
-            scf.C_matr_conv_alph = C_matr_AO_alph;
-            scf.C_matr_conv_beta = Some(C_matr_AO_beta);
-            scf.P_matr_conv_alph = P_matr_alph;
-            scf.P_matr_conv_beta = Some(P_matr_beta);
-            scf.orb_E_conv_alph = orb_E_alph;
-            scf.orb_E_conv_beta = Some(orb_E_beta);
-            println!("\nSCF CONVERGED!\n");
-            is_scf_conv = true;
-            break;
-        } else if scf_iter == calc_sett.max_scf_iter {
-            println!("\nSCF DID NOT CONVERGE!\n");
-            break;
-        }
-
-        E_scf_prev = E_scf_curr;
-        P_matr_old_alph = P_matr_alph.clone();
-        P_matr_old_beta = P_matr_beta.clone();
-        build_P_matr_uhf(&mut P_matr_alph, &C_matr_AO_alph, no_alpha);
-        build_P_matr_uhf(&mut P_matr_beta, &C_matr_AO_beta, no_beta);
-        if calc_sett.use_direct_scf {
-            todo!()
-            // delta_P_matr = Some((&P_matr - &P_matr_old).to_owned());
-        }
-    }
-
-    if is_scf_conv {
-        println!("{:*<55}", "");
-        println!("* {:^51} *", "FINAL RESULTS");
-        println!("{:*<55}", "");
-        println!("  {:^50}", "UHF SCF (in a.u.)");
-        println!("  {:=^50}  ", "");
-        println!("  {:<25}{:>25}", "Total SCF iterations:", scf.tot_scf_iter);
-        println!("  {:<25}{:>25.18}", "Final SCF energy:", scf.E_scf_conv);
-        println!("  {:<25}{:>25.18}", "Final tot. energy:", scf.E_tot_conv);
-        println!("{:*<55}", "");
-    }
-    scf
-}
+// #[allow(unused)]
 
 #[inline(always)]
 fn scf_conv_check(calc_sett: &CalcSettings, delta_E: f64, rms_comm_val: f64) -> bool {

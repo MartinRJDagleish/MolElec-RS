@@ -1,10 +1,10 @@
-use super::{CalcSettings, HFMatrices, SCF, HF};
+use super::{CalcSettings, HFMatrices, HF, SCF};
 use crate::{
     basisset::BasisSet,
     calc_type::{EriArr1, HF_Ref, DIIS},
     mol_int_and_deriv::{
         oe_int::{calc_kinetic_int_cgto, calc_overlap_int_cgto, calc_pot_int_cgto},
-        te_int::{calc_ERI_int_cgto, calc_schwarz_est_int, calc_schwarz_est_int_inp},
+        te_int::{calc_ERI_int_cgto, calc_schwarz_est_int_inp},
     },
     molecule::Molecule,
     print_utils::{fmt_f64, print_scf::print_scf_header_and_settings, ExecTimes},
@@ -251,110 +251,6 @@ impl RHF {
         }
     }
 
-    /// ### Description
-    /// Calculate the 1e integrals for the given basis set and molecule.
-    /// Returns a tuple of the overlap, kinetic and potential energy matrices.
-    ///
-    /// ### Note
-    /// This is not the non-redudant version of the integrals, i.e. each function for the computation gets called separately.
-    ///
-    ///
-    /// ### Arguments
-    /// * `basis` - The basis set.
-    /// * `mol` - The molecule.
-    ///
-    pub fn calc_1e_int_matrs(basis: &BasisSet, mol: &Molecule) -> (Array2<f64>, Array2<f64>) {
-        let mut S_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
-        let mut T_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
-        let mut V_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
-
-        for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
-            for sh_idx2 in 0..=sh_idx1 {
-                let shell2 = basis.shell(sh_idx2);
-                for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
-                    let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
-                    for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
-                        let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
-
-                        // Overlap
-                        S_matr[(mu, nu)] = if mu == nu {
-                            1.0
-                        } else {
-                            calc_overlap_int_cgto(cgto1, cgto2)
-                        };
-                        S_matr[(nu, mu)] = S_matr[(mu, nu)];
-
-                        // Kinetic
-                        T_matr[(mu, nu)] = calc_kinetic_int_cgto(cgto1, cgto2);
-                        T_matr[(nu, mu)] = T_matr[(mu, nu)];
-
-                        // Potential energy
-                        V_matr[(mu, nu)] = calc_pot_int_cgto(cgto1, cgto2, mol);
-                        V_matr[(nu, mu)] = V_matr[(mu, nu)];
-                    }
-                }
-            }
-        }
-
-        // Return ovelap and core hamiltonian (T + V)
-        (S_matr, T_matr + V_matr)
-    }
-
-    pub fn calc_2e_int_matr(basis: &BasisSet) -> EriArr1 {
-        let mut eri = EriArr1::new(basis.no_bf());
-
-        let no_shells = basis.no_shells();
-
-        for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
-            for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
-                let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
-
-                for sh_idx2 in 0..=sh_idx1 {
-                    let shell2 = basis.shell(sh_idx2);
-                    for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
-                        let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
-
-                        if mu >= nu {
-                            let munu = calc_cmp_idx(mu, nu);
-
-                            for sh_idx3 in 0..no_shells {
-                                let shell3 = basis.shell(sh_idx3);
-                                for (cgto_idx3, cgto3) in shell3.cgto_iter().enumerate() {
-                                    let lambda = basis.sh_len_offset(sh_idx3) + cgto_idx3;
-
-                                    for sh_idx4 in 0..=sh_idx3 {
-                                        let shell4 = basis.shell(sh_idx4);
-                                        for (cgto_idx4, cgto4) in shell4.cgto_iter().enumerate() {
-                                            let sigma = basis.sh_len_offset(sh_idx4) + cgto_idx4;
-
-                                            if lambda >= sigma {
-                                                let lambsig = calc_cmp_idx(lambda, sigma);
-                                                if munu >= lambsig {
-                                                    let cmp_idx = calc_cmp_idx(munu, lambsig);
-                                                    eri[cmp_idx] = calc_ERI_int_cgto(
-                                                        cgto1, cgto2, cgto3, cgto4,
-                                                    );
-                                                    // println!("{}: {}", cmp_idx, eri[cmp_idx]);
-                                                } else {
-                                                    continue;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            continue;
-                        }
-                    }
-                }
-            }
-        }
-
-        eri
-    }
-
-
     fn calc_1e_int_matrs_inp(&mut self, basis: &BasisSet, mol: &Molecule) {
         println!("Calculating 1e integrals ...");
 
@@ -395,9 +291,10 @@ impl RHF {
         println!("FINSIHED calculating 1e integrals ...");
 
         println!("Starting orthogonalization matrix calculation ...");
-        self.hf_matrs.S_matr_inv_sqrt = Self::inv_ssqrt(&self.hf_matrs.S_matr, UPLO::Upper);
+        self.hf_matrs.S_matr_inv_sqrt = matr_inv_ssqrt(&self.hf_matrs.S_matr, UPLO::Upper);
+        println!("FINISHED orthogonalization matrix calculation ...");
     }
-    
+
     fn calc_2e_int_matr_inp(eri_arr: &mut EriArr1, basis: &BasisSet) {
         let no_shells = basis.no_shells();
 
@@ -474,8 +371,7 @@ impl RHF {
         }
     }
 
-
-    fn calc_P_matr_rhf(P_matr: &mut Array2<f64>, C_matr: &Array2<f64>, no_occ: usize) {
+    pub(crate) fn calc_P_matr_rhf(P_matr: &mut Array2<f64>, C_matr: &Array2<f64>, no_occ: usize) {
         let C_occ = C_matr.slice(s![.., ..no_occ]);
         general_mat_mul(2.0_f64, &C_occ, &C_occ.t(), 0.0_f64, P_matr)
     }
@@ -503,7 +399,7 @@ impl RHF {
     }
 
     /// Calc Fock matrix in a direct SCF fashion (i.e. without precomputed eri tensor)
-    fn calc_new_F_matr_dir_scf_rhf(
+    pub(crate) fn calc_new_F_matr_dir_scf_rhf(
         F_matr: &mut Array2<f64>,
         delta_P_matr: &Array2<f64>,
         Schwarz_est_int: &Array2<f64>,
@@ -585,7 +481,11 @@ impl RHF {
             .for_each(|(f, gg)| *f += 0.5 * *gg);
     }
 
-    fn calc_E_scf_rhf(P_matr: &Array2<f64>, H_core: &Array2<f64>, F_matr: &Array2<f64>) -> f64 {
+    pub(crate) fn calc_E_scf_rhf(
+        P_matr: &Array2<f64>,
+        H_core: &Array2<f64>,
+        F_matr: &Array2<f64>,
+    ) -> f64 {
         Zip::from(P_matr)
             .and(H_core)
             .and(F_matr)
@@ -603,14 +503,6 @@ impl RHF {
             .sum::<f64>()
             / (matr1.len() as f64).sqrt()
     }
-
-    pub(crate) fn inv_ssqrt(arr2: &Array2<f64>, uplo: UPLO) -> Array2<f64> {
-        let (e, v) = arr2.eigh(uplo).unwrap();
-        let e_inv_sqrt = Array1::from_iter(e.iter().map(|x| x.powf(-0.5)));
-        let e_inv_sqrt_diag = Array::from_diag(&e_inv_sqrt);
-        let result = v.dot(&e_inv_sqrt_diag).dot(&v.t());
-        result
-    }
 }
 
 #[inline(always)]
@@ -621,138 +513,13 @@ pub fn calc_cmp_idx(idx1: usize, idx2: usize) -> usize {
         idx2 * (idx2 + 1) / 2 + idx1
     }
 }
-/// My try of a implementation of the density matrix based approach to solve the RHF SCF equations.
-/// This is NOT actually linear scaling, since I am not using any tricks to reduce the computational cost.
-/// No sparse matrices or anything like that.
-///
-/// Missing: CFMM for Coulomb and LinK for Exchange matrix
-#[allow(unused)]
-fn rhf_scf_linscal(
-    calc_sett: &CalcSettings,
-    exec_times: &mut ExecTimes,
-    basis: &BasisSet,
-    mol: &Molecule,
-) {
-    print_scf_header_and_settings(calc_sett, HF_Ref::RHF_ref);
-    const SHOW_ALL_CONV_CRIT: bool = false;
 
-    let mut is_scf_conv = false;
-    let mut scf = SCF::default();
-
-    let V_nuc: f64 = if mol.no_atoms() > 100 {
-        mol.calc_core_potential_par()
-    } else {
-        mol.calc_core_potential_ser()
-    };
-
-    println!("Calculating 1e integrals ...");
-    let (S_matr, H_core) = RHF::calc_1e_int_matrs(basis, mol);
-    println!("FINSIHED calculating 1e integrals ...");
-
-    let mut eri;
-    let schwarz_est_matr;
-    if calc_sett.use_direct_scf {
-        eri = None;
-
-        println!("Calculating Schwarz int estimates ...");
-        schwarz_est_matr = Some(calc_schwarz_est_int(basis));
-        println!("FINISHED Schwarz int estimates ...");
-    } else {
-        schwarz_est_matr = None;
-
-        println!("Calculating 2e integrals ...");
-        eri = Some(RHF::calc_2e_int_matr(basis));
-        println!("FINSIHED calculating 2e integrals ...");
-    }
-
-    // Init matrices for SCF loop
-    let mut E_scf_prev = 0.0;
-
-    let mut P_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
-    let mut P_matr_old = P_matr.clone();
-    let mut delta_P_matr = P_matr.clone();
-    let mut diis_str = "";
-
-    // Initial guess -> H_core
-    let mut F_matr = H_core.clone();
-
-    let S_matr_inv = S_matr.invh().unwrap();
-
-    // Print SCF iteration Header
-    println!(
-        "{:>3} {:^20} {:^20} {:^20} {:^20}",
-        "Iter", "E_scf", "E_tot", "ΔE", "RMS(|FPS - SPF|)"
-    );
-    for scf_iter in 0..=calc_sett.max_scf_iter {
-        if scf_iter == 0 {
-            let S_matr_inv_sqrt = RHF::inv_ssqrt(&S_matr, UPLO::Upper);
-            let F_matr_pr = S_matr_inv_sqrt.dot(&F_matr).dot(&S_matr_inv_sqrt);
-
-            let (orb_ener, C_matr_MO) = F_matr_pr.eigh(UPLO::Upper).unwrap();
-            let C_matr_AO = S_matr_inv_sqrt.dot(&C_matr_MO);
-
-            RHF::calc_P_matr_rhf(&mut P_matr, &C_matr_AO, basis.no_occ());
-            println!("Guess P_matr:\n {:12.6}", &P_matr);
-            println!(
-                "Eigenvalues of guess: {:12.6}",
-                &P_matr.eigh(UPLO::Upper).unwrap().0
-            );
-            delta_P_matr = P_matr.clone();
-        } else {
-            // 1. First new Fock matrix
-            RHF::calc_new_F_matr_dir_scf_rhf(
-                &mut F_matr,
-                &delta_P_matr,
-                schwarz_est_matr.as_ref().unwrap(),
-                basis,
-            );
-            // 2. Calc E_scf
-            let E_scf_curr = RHF::calc_E_scf_rhf(&P_matr, &H_core, &F_matr);
-            scf.E_tot_conv = E_scf_curr + V_nuc;
-
-            let delta_E = E_scf_curr - E_scf_prev;
-            println!(
-                "{:>3} {:>20.12} {:>20.12} {}",
-                scf_iter,
-                E_scf_curr,
-                scf.E_tot_conv,
-                fmt_f64(delta_E, 20, 8, 2),
-            );
-
-            // 3. Save old density matrix
-            P_matr_old = P_matr.clone();
-            // 4. Calculate new density matrix
-            P_matr = calc_new_P_matr_linscal_contravar(&P_matr, &F_matr, &S_matr, &S_matr_inv);
-            // 5. Calculate calculate ΔP matrix
-            delta_P_matr = (&P_matr - &P_matr_old).to_owned();
-            E_scf_prev = E_scf_curr;
-        }
-    }
-}
-
-#[allow(unused)]
-/// Result is contravariant
-fn calc_new_P_matr_linscal_contravar(
-    P_matr_curr: &Array2<f64>,
-    F_matr: &Array2<f64>,
-    S_matr: &Array2<f64>,
-    S_matr_inv: &Array2<f64>,
-) -> Array2<f64> {
-    const STEP_WIDTH: f64 = 0.000_001;
-
-    let energy_grad = calc_energy_gradient_p_matr(F_matr, P_matr_curr, S_matr);
-    P_matr_curr - STEP_WIDTH * S_matr_inv.dot(&energy_grad).dot(S_matr_inv)
-}
-
-fn calc_energy_gradient_p_matr(
-    F_matr: &Array2<f64>,
-    P_matr: &Array2<f64>,
-    S_matr: &Array2<f64>,
-) -> Array2<f64> {
-    3.0 * F_matr.dot(P_matr).dot(S_matr) + 3.0 * S_matr.dot(P_matr).dot(F_matr)
-        - 2.0 * S_matr.dot(P_matr).dot(F_matr).dot(P_matr).dot(S_matr)
-        - 2.0 * F_matr.dot(P_matr).dot(S_matr).dot(P_matr).dot(S_matr)
-        - 2.0 * S_matr.dot(P_matr).dot(S_matr).dot(P_matr).dot(F_matr)
+pub(crate) fn matr_inv_ssqrt(arr2: &Array2<f64>, uplo: UPLO) -> Array2<f64> {
+    let (e, v) = arr2.eigh(uplo).unwrap();
+    let e_inv_sqrt = Array1::from_iter(e.iter().map(|x| x.powf(-0.5)));
+    let e_inv_sqrt_diag = Array::from_diag(&e_inv_sqrt);
+    let result = v.dot(&e_inv_sqrt_diag).dot(&v.t());
+    result
 }
 
 #[cfg(test)]

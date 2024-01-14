@@ -1,8 +1,10 @@
 #![allow(non_snake_case)]
 use crate::basisset::BasisSet;
 use crate::calc_type::rhf::calc_cmp_idx;
-use crate::mol_int_and_deriv::oe_int::{calc_overlap_int_cgto, calc_kinetic_int_cgto, calc_pot_int_cgto};
-use crate::mol_int_and_deriv::te_int::calc_ERI_int_cgto;
+use crate::mol_int_and_deriv::{
+    oe_int::{calc_kinetic_int_cgto, calc_overlap_int_cgto, calc_pot_int_cgto},
+    te_int::calc_ERI_int_cgto,
+};
 use crate::molecule::Molecule;
 use ndarray::parallel::prelude::*;
 use ndarray::{Array1, Array2, Zip};
@@ -12,6 +14,7 @@ use std::ops::{Index, IndexMut};
 pub mod guess;
 pub mod rhf;
 pub mod uhf;
+pub mod rhf_linscal;
 
 #[allow(non_camel_case_types)]
 pub(crate) enum HF_Ref {
@@ -21,12 +24,6 @@ pub(crate) enum HF_Ref {
 }
 
 pub(crate) trait HF {
-    // fn new(
-    //     basis: &BasisSet,
-    //     calc_sett: &CalcSettings,
-    //     ref_type: HF_Ref,
-    // ) -> Self;
-
     fn run_scf(
         &mut self,
         calc_sett: &CalcSettings,
@@ -35,6 +32,108 @@ pub(crate) trait HF {
         mol: &crate::molecule::Molecule,
     ) -> SCF;
 
+    /// ### Description
+    /// Calculate the 1e integrals for the given basis set and molecule.
+    /// Returns a tuple of the overlap, kinetic and potential energy matrices.
+    ///
+    /// ### Note
+    /// This is not the non-redudant version of the integrals, i.e. each function for the computation gets called separately.
+    ///
+    ///
+    /// ### Arguments
+    /// * `basis` - The basis set.
+    /// * `mol` - The molecule.
+    ///
+    fn calc_1e_int_matrs(basis: &BasisSet, mol: &Molecule) -> (Array2<f64>, Array2<f64>) {
+        let mut S_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
+        let mut T_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
+        let mut V_matr = Array2::<f64>::zeros((basis.no_bf(), basis.no_bf()));
+
+        for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
+            for sh_idx2 in 0..=sh_idx1 {
+                let shell2 = basis.shell(sh_idx2);
+                for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
+                    let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
+                    for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
+                        let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
+
+                        // Overlap
+                        S_matr[(mu, nu)] = if mu == nu {
+                            1.0
+                        } else {
+                            calc_overlap_int_cgto(cgto1, cgto2)
+                        };
+                        S_matr[(nu, mu)] = S_matr[(mu, nu)];
+
+                        // Kinetic
+                        T_matr[(mu, nu)] = calc_kinetic_int_cgto(cgto1, cgto2);
+                        T_matr[(nu, mu)] = T_matr[(mu, nu)];
+
+                        // Potential energy
+                        V_matr[(mu, nu)] = calc_pot_int_cgto(cgto1, cgto2, mol);
+                        V_matr[(nu, mu)] = V_matr[(mu, nu)];
+                    }
+                }
+            }
+        }
+
+        // Return ovelap and core hamiltonian (T + V)
+        (S_matr, T_matr + V_matr)
+    }
+
+    fn calc_2e_int_matr(basis: &BasisSet) -> EriArr1 {
+        let mut eri = EriArr1::new(basis.no_bf());
+
+        let no_shells = basis.no_shells();
+
+        for (sh_idx1, shell1) in basis.shell_iter().enumerate() {
+            for (cgto_idx1, cgto1) in shell1.cgto_iter().enumerate() {
+                let mu = basis.sh_len_offset(sh_idx1) + cgto_idx1;
+
+                for sh_idx2 in 0..=sh_idx1 {
+                    let shell2 = basis.shell(sh_idx2);
+                    for (cgto_idx2, cgto2) in shell2.cgto_iter().enumerate() {
+                        let nu = basis.sh_len_offset(sh_idx2) + cgto_idx2;
+
+                        if mu >= nu {
+                            let munu = calc_cmp_idx(mu, nu);
+
+                            for sh_idx3 in 0..no_shells {
+                                let shell3 = basis.shell(sh_idx3);
+                                for (cgto_idx3, cgto3) in shell3.cgto_iter().enumerate() {
+                                    let lambda = basis.sh_len_offset(sh_idx3) + cgto_idx3;
+
+                                    for sh_idx4 in 0..=sh_idx3 {
+                                        let shell4 = basis.shell(sh_idx4);
+                                        for (cgto_idx4, cgto4) in shell4.cgto_iter().enumerate() {
+                                            let sigma = basis.sh_len_offset(sh_idx4) + cgto_idx4;
+
+                                            if lambda >= sigma {
+                                                let lambsig = calc_cmp_idx(lambda, sigma);
+                                                if munu >= lambsig {
+                                                    let cmp_idx = calc_cmp_idx(munu, lambsig);
+                                                    eri[cmp_idx] = calc_ERI_int_cgto(
+                                                        cgto1, cgto2, cgto3, cgto4,
+                                                    );
+                                                    // println!("{}: {}", cmp_idx, eri[cmp_idx]);
+                                                } else {
+                                                    continue;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
+        eri
+    }
 }
 
 #[derive(Debug)]
@@ -117,8 +216,8 @@ pub struct HFMatrices {
 #[derive(Debug, Default)]
 pub struct SCF {
     tot_scf_iter: usize,
-    pub E_tot_conv: f64,
-    pub E_scf_conv: f64,
+    E_tot_conv: f64,
+    E_scf_conv: f64,
     C_matr_conv_alph: Array2<f64>,
     P_matr_conv_alph: Array2<f64>, // [ ] TODO: pot. change this to sparse matrix
     C_matr_conv_beta: Option<Array2<f64>>,
