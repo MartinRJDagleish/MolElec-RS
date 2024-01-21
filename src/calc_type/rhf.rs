@@ -189,11 +189,12 @@ impl HF for RHF {
                     scf.tot_scf_iter = scf_iter;
                     scf.E_scf_conv = self.E_scf_curr;
                     scf.E_tot_conv = self.E_tot_curr;
-                    scf.C_matr_conv_alph = self.hf_matrs.C_matr_AO_alpha.clone();
-                    scf.P_matr_conv_alph = self.hf_matrs.P_matr_alpha.clone();
+                    scf.C_matr_conv_alpha = self.hf_matrs.C_matr_AO_alpha.clone();
+                    scf.P_matr_conv_alpha = self.hf_matrs.P_matr_alpha.clone();
                     println!("P_matr conv:\n{:>12.8}", &self.hf_matrs.P_matr_alpha);
                     scf.C_matr_conv_beta = None;
                     scf.P_matr_conv_beta = None;
+                    scf.hf_ref = HF_Ref::RHF_ref;
                     scf.orb_E_conv_alph = self.hf_matrs.orb_ener_alpha.clone();
                     println!("\nSCF CONVERGED!\n");
                     is_scf_conv = true;
@@ -236,14 +237,12 @@ impl HF for RHF {
 }
 
 impl RHF {
-    pub fn new(basis: &BasisSet, calc_sett: &CalcSettings, ref_type: HF_Ref) -> Self {
-        let create_beta_vars = match ref_type {
-            HF_Ref::RHF_ref => false,
-            HF_Ref::UHF_ref | HF_Ref::ROHF_ref => true,
-        };
+    pub fn new(basis: &BasisSet, calc_sett: &CalcSettings) -> Self {
+        // RHF has always beta variables
+        const CREATE_BETA_VARS : bool = false; // HF is always RHF
 
         Self {
-            hf_matrs: HFMatrices::new(basis.no_bf(), calc_sett.use_direct_scf, create_beta_vars),
+            hf_matrs: HFMatrices::new(basis.no_bf(), calc_sett.use_direct_scf, CREATE_BETA_VARS),
             E_scf_prev: 0.0,
             E_scf_curr: 0.0,
             E_tot_prev: 0.0,
@@ -569,7 +568,7 @@ mod tests {
         };
         let mut exec_times = ExecTimes::new();
 
-        let mut rhf = RHF::new(&basis, &calc_sett, HF_Ref::RHF_ref);
+        let mut rhf = RHF::new(&basis, &calc_sett);
         let _scf = rhf.run_scf(&calc_sett, &mut exec_times, &basis, &mol);
         println!("{:?}", _scf);
     }
@@ -591,7 +590,7 @@ mod tests {
         };
         let mut exec_times = ExecTimes::new();
 
-        let mut rhf = RHF::new(&basis, &calc_sett, HF_Ref::RHF_ref);
+        let mut rhf = RHF::new(&basis, &calc_sett);
         let _scf = rhf.run_scf(&calc_sett, &mut exec_times, &basis, &mol);
         // println!("{:?}", _scf);
     }
@@ -613,7 +612,7 @@ mod tests {
         };
         let mut exec_times = ExecTimes::new();
 
-        let mut rhf = RHF::new(&basis, &calc_sett, HF_Ref::RHF_ref);
+        let mut rhf = RHF::new(&basis, &calc_sett);
         let _scf = rhf.run_scf(&calc_sett, &mut exec_times, &basis, &mol);
         // println!("{:?}", _scf);
     }
@@ -635,7 +634,7 @@ mod tests {
         };
         let mut exec_times = ExecTimes::new();
 
-        let mut rhf = RHF::new(&basis, &calc_sett, HF_Ref::RHF_ref);
+        let mut rhf = RHF::new(&basis, &calc_sett);
         let _scf = rhf.run_scf(&calc_sett, &mut exec_times, &basis, &mol);
     }
 

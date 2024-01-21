@@ -9,18 +9,21 @@ use crate::molecule::Molecule;
 use ndarray::parallel::prelude::*;
 use ndarray::{Array1, Array2, Zip};
 use ndarray_linalg::SolveH;
+use std::default;
 use std::ops::{Index, IndexMut};
 
 pub mod guess;
 pub mod rhf;
-pub mod uhf;
 pub mod rhf_linscal;
+pub mod uhf;
 
 #[allow(non_camel_case_types)]
+#[derive(Debug, Default)]
 pub(crate) enum HF_Ref {
-    RHF_ref,
     UHF_ref,
     ROHF_ref,
+    #[default]
+    RHF_ref,
 }
 
 pub(crate) trait HF {
@@ -216,10 +219,11 @@ pub struct HFMatrices {
 #[derive(Debug, Default)]
 pub struct SCF {
     tot_scf_iter: usize,
+    hf_ref: HF_Ref,
     E_tot_conv: f64,
     E_scf_conv: f64,
-    C_matr_conv_alph: Array2<f64>,
-    P_matr_conv_alph: Array2<f64>, // [ ] TODO: pot. change this to sparse matrix
+    C_matr_conv_alpha: Array2<f64>,
+    P_matr_conv_alpha: Array2<f64>, // [ ] TODO: pot. change this to sparse matrix
     C_matr_conv_beta: Option<Array2<f64>>,
     P_matr_conv_beta: Option<Array2<f64>>, // [ ] TODO: pot. change this to sparse matrix
     orb_E_conv_alph: Array1<f64>,
@@ -239,12 +243,6 @@ pub struct DIIS {
 
 impl HFMatrices {
     pub fn new(no_bf: usize, use_direct_scf: bool, create_beta_vars: bool) -> Self {
-        let eri_arr = if use_direct_scf {
-            None
-        } else {
-            Some(EriArr1::new(no_bf))
-        };
-
         let (
             C_matr_MO_beta,
             C_matr_AO_beta,
@@ -267,7 +265,7 @@ impl HFMatrices {
             (None, None, None, None, None, None, None)
         };
 
-        let (schwarz_est, delta_P_matr_alpha, delta_P_matr_beta) = if use_direct_scf {
+        let (schwarz_est, delta_P_matr_alpha, delta_P_matr_beta, eri_opt) = if use_direct_scf {
             (
                 Some(Array2::<f64>::zeros((no_bf, no_bf))),
                 Some(Array2::<f64>::zeros((no_bf, no_bf))),
@@ -276,9 +274,10 @@ impl HFMatrices {
                 } else {
                     None
                 },
+                None,
             )
         } else {
-            (None, None, None)
+            (None, None, None, Some(EriArr1::new(no_bf)))
         };
 
         Self {
@@ -288,7 +287,7 @@ impl HFMatrices {
             V_ne_matr: Array2::<f64>::zeros((no_bf, no_bf)),
             H_core_matr: Array2::<f64>::zeros((no_bf, no_bf)),
 
-            eri_opt: eri_arr,
+            eri_opt,
 
             C_matr_MO_alpha: Array2::<f64>::zeros((no_bf, no_bf)),
             C_matr_AO_alpha: Array2::<f64>::zeros((no_bf, no_bf)),
