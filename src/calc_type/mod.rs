@@ -1,15 +1,16 @@
 #![allow(non_snake_case)]
-use crate::basisset::BasisSet;
-use crate::calc_type::rhf::calc_cmp_idx;
-use crate::mol_int_and_deriv::{
-    oe_int::{calc_kinetic_int_cgto, calc_overlap_int_cgto, calc_pot_int_cgto},
-    te_int::calc_ERI_int_cgto,
+use crate::{
+    basisset::BasisSet,
+    calc_type::rhf::calc_cmp_idx,
+    mol_int_and_deriv::{
+        oe_int::{calc_kinetic_int_cgto, calc_overlap_int_cgto, calc_pot_int_cgto},
+        te_int::calc_ERI_int_cgto,
+    },
+    molecule::Molecule,
+    print_utils::ExecTimes,
 };
-use crate::molecule::Molecule;
-use ndarray::parallel::prelude::*;
-use ndarray::{Array1, Array2, Zip};
+use ndarray::{parallel::prelude::*, Array1, Array2, Zip};
 use ndarray_linalg::SolveH;
-use std::default;
 use std::ops::{Index, IndexMut};
 
 pub mod guess;
@@ -30,9 +31,9 @@ pub(crate) trait HF {
     fn run_scf(
         &mut self,
         calc_sett: &CalcSettings,
-        exec_times: &mut crate::print_utils::ExecTimes,
-        basis: &crate::basisset::BasisSet,
-        mol: &crate::molecule::Molecule,
+        exec_times: &mut ExecTimes,
+        basis: &BasisSet,
+        mol: &Molecule,
     ) -> SCF;
 
     /// ### Description
@@ -236,9 +237,6 @@ pub struct DIIS {
     pub diis_settings: DiisSettings,
     pub F_matr_pr_ring_buf: Vec<Array2<f64>>,
     pub err_matr_pr_ring_buf: Vec<Array2<f64>>,
-    // Original approach
-    // F_matr_pr_deq: VecDeque<Array2<f64>>,
-    // err_matr_pr_deq: VecDeque<Array2<f64>>,
 }
 
 impl HFMatrices {

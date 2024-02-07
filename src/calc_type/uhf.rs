@@ -10,7 +10,7 @@ use crate::{
         te_int::{calc_ERI_int_cgto, calc_schwarz_est_int, calc_schwarz_est_int_inp},
     },
     molecule::Molecule,
-    print_utils::{fmt_f64, print_scf::print_scf_header_and_settings},
+    print_utils::{fmt_f64, print_scf::print_scf_header_and_settings, ExecTimes},
 };
 use ndarray::parallel::prelude::*;
 use ndarray::{linalg::general_mat_mul, s, Array1, Array2, Zip};
@@ -31,9 +31,9 @@ impl HF for UHF {
     fn run_scf(
         &mut self,
         calc_sett: &CalcSettings,
-        exec_times: &mut crate::print_utils::ExecTimes,
-        basis: &crate::basisset::BasisSet,
-        mol: &crate::molecule::Molecule,
+        exec_times: &mut ExecTimes,
+        basis: &BasisSet,
+        mol: &Molecule,
     ) -> SCF {
         print_scf_header_and_settings(calc_sett, crate::calc_type::HF_Ref::UHF_ref);
 
@@ -114,11 +114,11 @@ impl HF for UHF {
                 self.hf_matrs.orb_ener_beta.replace(orb_e_beta);
                 self.hf_matrs.C_matr_MO_beta.replace(C_mat_bet);
 
-                let C_mat_AO_beta = self
-                    .hf_matrs
-                    .S_matr_inv_sqrt
-                    .dot(self.hf_matrs.C_matr_MO_beta.as_ref().unwrap());
-                self.hf_matrs.C_matr_AO_beta.replace(C_mat_AO_beta);
+                self.hf_matrs.C_matr_AO_beta = Some(
+                    self.hf_matrs
+                        .S_matr_inv_sqrt
+                        .dot(self.hf_matrs.C_matr_MO_beta.as_ref().unwrap()),
+                );
 
                 Self::calc_P_matr_uhf(
                     &mut self.hf_matrs.P_matr_alpha,
@@ -169,6 +169,7 @@ impl HF for UHF {
                     &self.hf_matrs.F_matr_beta.as_ref().unwrap(),
                 );
                 self.E_tot_curr = self.E_scf_curr + V_nuc;
+                // FPS - SPF 
                 let fps_comm_alph = DIIS::calc_FPS_comm(
                     &self.hf_matrs.F_matr_alpha,
                     &self.hf_matrs.P_matr_alpha,
@@ -241,6 +242,12 @@ impl HF for UHF {
                     .unwrap();
                 self.hf_matrs.orb_ener_beta.replace(orb_e_beta);
                 self.hf_matrs.C_matr_MO_beta.replace(C_mat_bet);
+
+                self.hf_matrs.C_matr_AO_beta = Some(
+                    self.hf_matrs
+                        .S_matr_inv_sqrt
+                        .dot(self.hf_matrs.C_matr_MO_beta.as_ref().unwrap()),
+                );
 
                 let delta_E = self.E_scf_curr - self.E_scf_prev;
                 let rms_comm_val = calc_rms_comm_val_uhf(&fps_comm_alph, &fps_comm_beta);
@@ -354,9 +361,9 @@ impl UHF {
                 }
             }
         }
-        println!("S_matr: \n{:>12.8}", &self.hf_matrs.S_matr);
-        println!("T_matr: \n{:>12.8}", &self.hf_matrs.T_matr);
-        println!("V_matr: \n{:>12.8}", &self.hf_matrs.V_ne_matr);
+        // println!("S_matr: \n{:>12.8}", &self.hf_matrs.S_matr);
+        // println!("T_matr: \n{:>12.8}", &self.hf_matrs.T_matr);
+        // println!("V_matr: \n{:>12.8}", &self.hf_matrs.V_ne_matr);
 
         Zip::from(self.hf_matrs.T_matr.view())
             .and(self.hf_matrs.V_ne_matr.view())
@@ -697,34 +704,37 @@ fn calc_new_F_matr_ind_scf_uhf(
     F_matr_spin.assign(H_core);
     let no_bf = F_matr_spin.nrows();
 
-    if is_alpha {
-        // Fock matrix for alpha spin
-        for mu in 0..no_bf {
-            for nu in 0..=mu {
-                for lambda in 0..no_bf {
-                    for sigma in 0..no_bf {
-                        let coul_P_mat_val =
-                            P_matr_alph[(lambda, sigma)] + P_matr_beta[(lambda, sigma)];
-                        F_matr_spin[(mu, nu)] += coul_P_mat_val * eri[(mu, nu, lambda, sigma)]
-                            - eri[(mu, sigma, lambda, nu)] * P_matr_alph[(lambda, sigma)];
+    match is_alpha {
+        true => {
+            // Fock matrix for alpha spin
+            for mu in 0..no_bf {
+                for nu in 0..=mu {
+                    for lambda in 0..no_bf {
+                        for sigma in 0..no_bf {
+                            let coul_P_mat_val =
+                                P_matr_alph[(lambda, sigma)] + P_matr_beta[(lambda, sigma)];
+                            F_matr_spin[(mu, nu)] += coul_P_mat_val * eri[(mu, nu, lambda, sigma)]
+                                - eri[(mu, sigma, lambda, nu)] * P_matr_alph[(lambda, sigma)];
+                        }
                     }
+                    F_matr_spin[(nu, mu)] = F_matr_spin[(mu, nu)];
                 }
-                F_matr_spin[(nu, mu)] = F_matr_spin[(mu, nu)];
             }
         }
-    } else {
-        // Fock matrix for beta spin
-        for mu in 0..no_bf {
-            for nu in 0..=mu {
-                for lambda in 0..no_bf {
-                    for sigma in 0..no_bf {
-                        let coul_P_mat_val =
-                            P_matr_alph[(lambda, sigma)] + P_matr_beta[(lambda, sigma)];
-                        F_matr_spin[(mu, nu)] += coul_P_mat_val * eri[(mu, nu, lambda, sigma)]
-                            - eri[(mu, sigma, lambda, nu)] * P_matr_beta[(lambda, sigma)];
+        _ => {
+            // Fock matrix for beta spin
+            for mu in 0..no_bf {
+                for nu in 0..=mu {
+                    for lambda in 0..no_bf {
+                        for sigma in 0..no_bf {
+                            let coul_P_mat_val =
+                                P_matr_alph[(lambda, sigma)] + P_matr_beta[(lambda, sigma)];
+                            F_matr_spin[(mu, nu)] += coul_P_mat_val * eri[(mu, nu, lambda, sigma)]
+                                - eri[(mu, sigma, lambda, nu)] * P_matr_beta[(lambda, sigma)];
+                        }
                     }
+                    F_matr_spin[(nu, mu)] = F_matr_spin[(mu, nu)];
                 }
-                F_matr_spin[(nu, mu)] = F_matr_spin[(mu, nu)];
             }
         }
     }

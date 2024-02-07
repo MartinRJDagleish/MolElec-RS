@@ -67,7 +67,7 @@ pub(crate) fn print_header_for_section(inp_str: &str) {
     println!("\n{}\n{}\n{}\n", HEADER_STR, centered_str, HEADER_STR);
 }
 
-/// ## Format a floating point number in scientific notation 
+/// ## Format a floating point number in scientific notation
 /// - `width` controls the amount of left padded spaces
 /// - `precision` is the amount of decimals
 /// - `exp_pad` controls the amount of left padded 0s
@@ -116,8 +116,15 @@ impl ExecTimes {
     pub fn print_wo_order(&self) {
         print_header_for_section("Execution times");
         for (name, timings) in &self.timings_map {
+            if name == "Total" {
+                continue;
+            }
             let exec_time = timings[1].duration_since(timings[0]);
-            println!("  {}: {:?}", name, exec_time);
+            println!("{: >4}{:<25}{:>15?}", "", name, exec_time);
         }
+
+        let tot_instants = self.timings_map.get("Total").unwrap();
+        let tot_exec_time = tot_instants[1].duration_since(tot_instants[0]);
+        println!("\n\n{: >4}{:<25}{:>15?}","",  "Total execution time", tot_exec_time);
     }
 }

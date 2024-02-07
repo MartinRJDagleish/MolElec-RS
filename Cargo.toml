@@ -8,12 +8,12 @@ edition = "2021"
 [dependencies]
 ndarray = { version = "0.15.6", features = ["blas", "approx-0_5", "rayon"] }
 ndarray-linalg = { version = "0.16.0", features = ["openblas-system"] }
-blas-src = { version = "0.9", features = ["openblas"] }
+blas-src = { version = "0.10", features = ["openblas"] }
 openblas-src = { version = "0.10.8", features = ["cblas", "system"] }
 ndarray_einsum_beta = {version = "0.7.0"}
 physical_constants = {version = "0.5.0"}
-strum = "0.25.0"
-strum_macros = "0.25.3"
+strum = "0.26.1"
+strum_macros = "0.26.1"
 lazy_static = "1.4.0"
 approx = "0.5.1"
 boys = "0.1.0"
@@ -29,3 +29,7 @@ rayon = "1.8.1"
 [profile.release]
 lto = true
 strip = true
+codegen-units = 1
+
+[build]
+rustflags = ["-C", "target-cpu=native"]

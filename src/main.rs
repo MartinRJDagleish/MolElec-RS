@@ -63,7 +63,6 @@ fn main() {
     exec_times.start("UHF DIIS indir");
     let mut uhf: UHF = UHF::new(&basis, &calc_sett);
     let _scf = uhf.run_scf(&calc_sett, &mut exec_times, &basis, &mol);
-    // let _scf = uhf_scf_normal(&calc_sett, &mut exec_times, &basis, &mol);
     exec_times.stop("UHF DIIS indir");
 
     exec_times.stop("Total");

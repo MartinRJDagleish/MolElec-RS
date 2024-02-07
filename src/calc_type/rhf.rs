@@ -191,7 +191,6 @@ impl HF for RHF {
                     scf.E_tot_conv = self.E_tot_curr;
                     scf.C_matr_conv_alpha = self.hf_matrs.C_matr_AO_alpha.clone();
                     scf.P_matr_conv_alpha = self.hf_matrs.P_matr_alpha.clone();
-                    println!("P_matr conv:\n{:>12.8}", &self.hf_matrs.P_matr_alpha);
                     scf.C_matr_conv_beta = None;
                     scf.P_matr_conv_beta = None;
                     scf.hf_ref = HF_Ref::RHF_ref;
@@ -280,9 +279,9 @@ impl RHF {
                 }
             }
         }
-        println!("S_matr: \n{:>12.8}", &self.hf_matrs.S_matr);
-        println!("T_matr: \n{:>12.8}", &self.hf_matrs.T_matr);
-        println!("V_matr: \n{:>12.8}", &self.hf_matrs.V_ne_matr);
+        // println!("S_matr: \n{:>12.8}", &self.hf_matrs.S_matr);
+        // println!("T_matr: \n{:>12.8}", &self.hf_matrs.T_matr);
+        // println!("V_matr: \n{:>12.8}", &self.hf_matrs.V_ne_matr);
 
         Zip::from(self.hf_matrs.T_matr.view())
             .and(self.hf_matrs.V_ne_matr.view())
